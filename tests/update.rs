@@ -515,7 +515,8 @@ fn a_confirmed_status_change_rereads_the_card_later() {
     assert!(fx.contains(&Effect::FetchItem {
         item_id: "item1".into(),
         delay_ms: Some(4000),
-        rev: 1
+        rev: 1,
+        priority_field_id: Some("f-priority".into()),
     }));
 }
 
@@ -603,7 +604,8 @@ fn an_item_read_older_than_a_confirmation_is_read_again() {
         vec![Effect::FetchItem {
             item_id: "item1".into(),
             delay_ms: None,
-            rev: s.confirms
+            rev: s.confirms,
+            priority_field_id: Some("f-priority".into()),
         }]
     );
 }

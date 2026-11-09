@@ -185,6 +185,8 @@ pub enum Effect {
         item_id: ItemId,
         delay_ms: Option<u64>,
         rev: u64,
+        /// For decoding the card that comes back.
+        priority_field_id: Option<String>,
     },
     FetchDetail {
         seq: u64,
@@ -458,6 +460,11 @@ fn fetch_item(s: &State, item_id: ItemId, delay_ms: Option<u64>) -> Effect {
         item_id,
         delay_ms,
         rev: s.confirms,
+        priority_field_id: s
+            .meta
+            .as_ref()
+            .and_then(|m| m.priority_field.as_ref())
+            .map(|f| f.id.clone()),
     }
 }
 

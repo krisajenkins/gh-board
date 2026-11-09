@@ -430,8 +430,8 @@ pub fn item_reread(data: &Value, priority_field_id: Option<&str>) -> Result<Opti
 /// Decode a successful mutation for an op of the given kind.
 ///
 /// - status: a full card (`CardItem`).
-/// - create: a full card, from `{ "item": <CardItem> }` — the shell wraps the
-///   project item from the last step it ran (add to project, or set status).
+/// - create: a full card, from the response to its last step: setting the
+///   status, or adding it to the project when it has no status.
 /// - priority, assign, state: issue fields (`CardIssue`; no item id or status).
 /// - comment: the comment.
 /// - body: the new description.
@@ -452,7 +452,11 @@ pub fn mutation(
             &["updateProjectV2ItemFieldValue", "projectV2Item"],
             "no item in response",
         )?),
-        OpKind::Create { .. } => full_card(node(&["item"], "no item in response")?),
+        OpKind::Create { .. } => full_card(
+            at(data, &["updateProjectV2ItemFieldValue", "projectV2Item"])
+                .or_else(|| at(data, &["addProjectV2ItemById", "item"]))
+                .ok_or("no item in response")?,
+        ),
         OpKind::Priority { .. } => issue_card(node(
             &["setIssueFieldValue", "issue"],
             "no issue in response",
