@@ -13,12 +13,18 @@ use std::time::{Duration, Instant};
 
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyEvent};
+use ratatui::crossterm::execute;
+use ratatui::crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
 use ratatui::layout::Rect;
 
 use crate::model::State;
+use crate::shell::editor as shell_editor;
 use crate::shell::effects::Runner;
 use crate::shell::gh::{Gh, Transport};
 use crate::types::Config;
+use crate::ui::editor;
 use crate::ui::{Action, UiState, handle_key, render};
 use crate::update::{Effect, Level, Msg, update};
 
@@ -102,6 +108,24 @@ fn on_key<T: Transport>(
             Action::Quit => return Ok(None),
             Action::Redraw => terminal.clear()?,
             Action::Notify(message, level) => app.ui = app.ui.notify(message, level, now),
+            Action::Edit(edit) => {
+                let command = editor::command(
+                    std::env::var("VISUAL").ok().as_deref(),
+                    std::env::var("EDITOR").ok().as_deref(),
+                );
+                let edited = suspended(terminal, || shell_editor::edit(&command, &edit.initial))?;
+                match edited {
+                    Ok(edited) => {
+                        if let Some(msg) = editor::decide(&edit, edited.success, &edited.text) {
+                            app = dispatch(app, runner, msg, Instant::now());
+                        }
+                    }
+                    Err(e) => {
+                        let message = format!("Could not run {}: {e}", command.join(" "));
+                        app.ui = app.ui.notify(message, Level::Error, Instant::now());
+                    }
+                }
+            }
             Action::OpenUrl(url) => {
                 if let Err(e) = open_url(&url) {
                     app.ui = app
@@ -112,6 +136,19 @@ fn on_key<T: Transport>(
         }
     }
     Ok(Some(app))
+}
+
+/// Hand the terminal to `f` (an editor): leave raw mode and the alternate
+/// screen, run it, then come back and repaint everything.
+fn suspended<R>(terminal: &mut DefaultTerminal, f: impl FnOnce() -> R) -> io::Result<R> {
+    disable_raw_mode()?;
+    execute!(io::stdout(), LeaveAlternateScreen)?;
+    terminal.show_cursor()?;
+    let result = f();
+    execute!(io::stdout(), EnterAlternateScreen)?;
+    enable_raw_mode()?;
+    terminal.clear()?;
+    Ok(result)
 }
 
 fn dispatch<T: Transport>(app: App, runner: &Runner<T>, msg: Msg, now: Instant) -> App {

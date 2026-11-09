@@ -3,7 +3,11 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::model::{State, board};
+use crate::model::{State, board, op_counts};
+use crate::types::IssueState;
+use crate::ui::detail;
+use crate::ui::editor::{Edit, EditKind};
+use crate::ui::picker::{Picker, PickerKind, initial_cursor, menu};
 use crate::ui::state::{Mode, UiState};
 use crate::update::{Direction, Level, Msg, Towards};
 
@@ -17,6 +21,8 @@ pub enum Action {
     Redraw,
     /// Show a notice (the shell stamps the time).
     Notify(String, Level),
+    /// Suspend the UI and edit text in `$EDITOR`.
+    Edit(Edit),
 }
 
 /// What a key did.
@@ -57,7 +63,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("R", "reload everything from GitHub"),
     ("!", "review failed changes"),
     ("o", "open the card in the browser"),
-    ("Enter", "card detail (not yet)"),
+    ("Enter", "card detail"),
     ("?", "this help"),
     ("q", "quit"),
 ];
@@ -81,6 +87,7 @@ pub fn handle_key(ui: &UiState, state: &State, key: KeyEvent) -> (UiState, Outco
             let input = input.clone();
             new_issue_key(ui, input, key)
         }
+        Mode::ConfirmQuit { .. } => confirm_quit_key(ui, key),
         _ if ui.prompt.is_some() => prompt_key(ui, key),
         Mode::Help => (
             UiState {
@@ -89,7 +96,232 @@ pub fn handle_key(ui: &UiState, state: &State, key: KeyEvent) -> (UiState, Outco
             },
             Outcome::default(),
         ),
+        Mode::Picker(picker) => {
+            let picker = picker.clone();
+            picker_key(ui, state, picker, key)
+        }
+        Mode::Board if state.detail.is_some() => detail_key(ui, state, key),
         Mode::Board => board_key(ui, state, key),
+    }
+}
+
+/// Quit, unless changes are still on their way to GitHub: then ask first.
+/// Failed changes do not count; nothing more will happen to them.
+fn quit(ui: UiState, state: &State) -> (UiState, Outcome) {
+    match op_counts(state).0 {
+        0 => (ui, Outcome::action(Action::Quit)),
+        pending => (
+            UiState {
+                mode: Mode::ConfirmQuit { pending },
+                ..ui
+            },
+            Outcome::default(),
+        ),
+    }
+}
+
+fn confirm_quit_key(ui: UiState, key: KeyEvent) -> (UiState, Outcome) {
+    let board = UiState {
+        mode: Mode::Board,
+        ..ui
+    };
+    match key.code {
+        KeyCode::Char('y' | 'Y') => (board, Outcome::action(Action::Quit)),
+        _ => (board, Outcome::default()),
+    }
+}
+
+fn with_mode(ui: UiState, mode: Mode) -> UiState {
+    UiState { mode, ..ui }
+}
+
+fn picker_key(ui: UiState, state: &State, picker: Picker, key: KeyEvent) -> (UiState, Outcome) {
+    let Some(m) = menu(state, &picker) else {
+        return (with_mode(ui, Mode::Board), Outcome::default());
+    };
+    let n = m.choices.len();
+    let cursor = picker.cursor.min(n.saturating_sub(1));
+    let moved = |cursor| {
+        (
+            with_mode(
+                ui.clone(),
+                Mode::Picker(Picker {
+                    cursor,
+                    ..picker.clone()
+                }),
+            ),
+            Outcome::default(),
+        )
+    };
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') => (with_mode(ui, Mode::Board), Outcome::default()),
+        _ if ctrl(&key, 'c') => (with_mode(ui, Mode::Board), Outcome::default()),
+        KeyCode::Char('j') | KeyCode::Down => moved((cursor + 1).min(n.saturating_sub(1))),
+        KeyCode::Char('k') | KeyCode::Up => moved(cursor.saturating_sub(1)),
+        KeyCode::Char('g') | KeyCode::Home => moved(0),
+        KeyCode::Char('G') | KeyCode::End => moved(n.saturating_sub(1)),
+        KeyCode::Enter => match m.choices.get(cursor) {
+            Some(choice) if m.stays_open => (
+                with_mode(ui, Mode::Picker(Picker { cursor, ..picker })),
+                Outcome::msg(choice.msg.clone()),
+            ),
+            Some(choice) => (with_mode(ui, Mode::Board), Outcome::msg(choice.msg.clone())),
+            None => (ui, Outcome::default()),
+        },
+        _ => (ui, Outcome::default()),
+    }
+}
+
+fn detail_key(ui: UiState, state: &State, key: KeyEvent) -> (UiState, Outcome) {
+    let g_was_pending = ui.pending_g;
+    let ui = UiState {
+        pending_g: false,
+        ..ui
+    };
+    let scroll = |ui: UiState, to: usize| {
+        (
+            UiState {
+                detail_scroll: to,
+                ..ui
+            },
+            Outcome::default(),
+        )
+    };
+    let page = ui.detail_height.max(1);
+    let half = (page / 2).max(1);
+    let at = ui.detail_scroll;
+    if ctrl(&key, 'd') {
+        return scroll(ui, at.saturating_add(half));
+    }
+    if ctrl(&key, 'u') {
+        return scroll(ui, at.saturating_sub(half));
+    }
+    if ctrl(&key, 'c') {
+        return quit(ui, state);
+    }
+    if ctrl(&key, 'l') {
+        return (ui, Outcome::action(Action::Redraw));
+    }
+    if key.modifiers.contains(KeyModifiers::CONTROL) || key.modifiers.contains(KeyModifiers::ALT) {
+        return (ui, Outcome::default());
+    }
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down => return scroll(ui, at.saturating_add(1)),
+        KeyCode::Char('k') | KeyCode::Up => return scroll(ui, at.saturating_sub(1)),
+        KeyCode::PageDown => return scroll(ui, at.saturating_add(page)),
+        KeyCode::PageUp => return scroll(ui, at.saturating_sub(page)),
+        KeyCode::Char('g') if g_was_pending => return scroll(ui, 0),
+        KeyCode::Home => return scroll(ui, 0),
+        // Clamped to the end by the next settle.
+        KeyCode::Char('G') | KeyCode::End => return scroll(ui, usize::MAX),
+        KeyCode::Char('g') => {
+            return (
+                UiState {
+                    pending_g: true,
+                    ..ui
+                },
+                Outcome::default(),
+            );
+        }
+        KeyCode::Char('q') | KeyCode::Esc => return (ui, Outcome::msg(Msg::CloseDetail)),
+        KeyCode::Char('r') => return (ui, Outcome::msg(Msg::ReloadDetail)),
+        KeyCode::Char('<') => return (ui, Outcome::msg(Msg::MoveCard(Towards::Prev))),
+        KeyCode::Char('>') => return (ui, Outcome::msg(Msg::MoveCard(Towards::Next))),
+        KeyCode::Char('!') => return (ui, Outcome::msg(Msg::ReviewFailures)),
+        KeyCode::Char('?') => return (with_mode(ui, Mode::Help), Outcome::default()),
+        _ => {}
+    }
+    let Some(card) = detail::card(state) else {
+        return (ui, Outcome::default());
+    };
+    let item_id = card.item_id.clone();
+    let open = |ui: UiState, kind: PickerKind| {
+        let cursor = initial_cursor(state, kind, &item_id);
+        with_mode(
+            ui,
+            Mode::Picker(Picker {
+                kind,
+                item_id: item_id.clone(),
+                cursor,
+            }),
+        )
+    };
+    let edit = |kind, initial: String| {
+        Outcome::action(Action::Edit(Edit {
+            kind,
+            item_id: item_id.clone(),
+            initial,
+        }))
+    };
+    match key.code {
+        KeyCode::Char('o') => match card.url {
+            Some(url) => (ui, Outcome::action(Action::OpenUrl(url))),
+            None => (ui, Outcome::default()),
+        },
+        KeyCode::Char('m') => (ui, Outcome::msg(Msg::AssignMe { item_id })),
+        KeyCode::Char('u') => (ui, Outcome::msg(Msg::UnassignAll { item_id })),
+        KeyCode::Char('s') => (open(ui, PickerKind::Status), Outcome::default()),
+        KeyCode::Char('p') => {
+            let has_field = state
+                .meta
+                .as_ref()
+                .is_some_and(|m| m.priority_field.is_some());
+            if has_field {
+                (open(ui, PickerKind::Priority), Outcome::default())
+            } else {
+                (
+                    ui,
+                    Outcome::action(Action::Notify(
+                        "This board has no priority field".into(),
+                        Level::Warn,
+                    )),
+                )
+            }
+        }
+        KeyCode::Char('x') if card.state == Some(IssueState::Closed) => (
+            ui,
+            Outcome::msg(Msg::SetState {
+                item_id,
+                issue_state: IssueState::Open,
+                reason: None,
+            }),
+        ),
+        KeyCode::Char('x') => (open(ui, PickerKind::Close), Outcome::default()),
+        KeyCode::Char('a') => {
+            let load = match (&card.repo_id, &card.repo) {
+                (Some(repo_id), Some(repo)) if !state.assignable.contains_key(repo_id) => {
+                    vec![Msg::LoadAssignable {
+                        repo_id: repo_id.clone(),
+                        repo: repo.clone(),
+                    }]
+                }
+                _ => vec![],
+            };
+            (
+                open(ui, PickerKind::Assignee),
+                Outcome {
+                    msgs: load,
+                    actions: vec![],
+                },
+            )
+        }
+        KeyCode::Char('c') => (ui, edit(EditKind::Comment, String::new())),
+        KeyCode::Char('e') => {
+            match crate::model::description(state.detail.as_ref(), &state.ops, &item_id) {
+                Some((body, _)) => {
+                    let body = body.to_string();
+                    (ui, edit(EditKind::Description, body))
+                }
+                None => (
+                    ui,
+                    Outcome::action(Action::Notify(
+                        "The description is still loading; try again in a moment".into(),
+                        Level::Info,
+                    )),
+                ),
+            }
+        }
+        _ => (ui, Outcome::default()),
     }
 }
 
@@ -201,7 +433,7 @@ fn board_key(ui: UiState, state: &State, key: KeyEvent) -> (UiState, Outcome) {
         return (ui, out);
     }
     if ctrl(&key, 'c') {
-        return (ui, Outcome::action(Action::Quit));
+        return quit(ui, state);
     }
     if key.modifiers.contains(KeyModifiers::CONTROL) || key.modifiers.contains(KeyModifiers::ALT) {
         return (ui, Outcome::default());
@@ -260,10 +492,15 @@ fn board_key(ui: UiState, state: &State, key: KeyEvent) -> (UiState, Outcome) {
             Some(url) => Outcome::action(Action::OpenUrl(url)),
             None => Outcome::default(),
         },
-        KeyCode::Enter => Outcome::action(Action::Notify(
-            "The detail view is not ported yet".into(),
-            Level::Info,
-        )),
+        KeyCode::Enter => {
+            return (
+                UiState {
+                    detail_scroll: 0,
+                    ..ui
+                },
+                Outcome::msg(Msg::OpenDetail { item_id: None }),
+            );
+        }
         KeyCode::Char('?') => {
             return (
                 UiState {
@@ -273,7 +510,7 @@ fn board_key(ui: UiState, state: &State, key: KeyEvent) -> (UiState, Outcome) {
                 Outcome::default(),
             );
         }
-        KeyCode::Char('q') => Outcome::action(Action::Quit),
+        KeyCode::Char('q') => return quit(ui, state),
         _ => Outcome::default(),
     };
     (ui, out)

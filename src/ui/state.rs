@@ -9,8 +9,9 @@ use std::time::{Duration, Instant};
 use ratatui::layout::Rect;
 
 use crate::model::{ColumnKey, Op, State, board};
-use crate::ui::card;
 use crate::ui::layout::{column_layout, scroll_into_view, scroll_to_card};
+use crate::ui::picker::Picker;
+use crate::ui::{card, detail};
 use crate::update::{Effect, Level};
 
 /// What keys currently do.
@@ -24,6 +25,10 @@ pub enum Mode {
     NewIssue { input: String },
     /// `?`: the key help overlay.
     Help,
+    /// A list popup over the detail view.
+    Picker(Picker),
+    /// `q` while changes are still being sent: quit anyway?
+    ConfirmQuit { pending: usize },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,6 +64,10 @@ pub struct UiState {
     pub prompt: Option<Op>,
     pub notice: Option<Notice>,
     pub scroll: Scroll,
+    /// The detail view's first visible line.
+    pub detail_scroll: usize,
+    /// Lines the detail view showed at the last settle (for half-page keys).
+    pub detail_height: usize,
 }
 
 /// The screen's regions: column headers, the board, a message line (prompts
@@ -145,11 +154,21 @@ impl UiState {
                 (col.key.clone(), first)
             })
             .collect();
+        let (detail_scroll, detail_height) = if state.detail.is_some() {
+            let rect = detail::rect(area);
+            let height = detail::inner_height(rect);
+            let len = detail::lines(state, detail::inner_width(rect)).len();
+            (self.detail_scroll.min(len.saturating_sub(height)), height)
+        } else {
+            (0, self.detail_height)
+        };
         UiState {
             scroll: Scroll {
                 first_col,
                 first_card,
             },
+            detail_scroll,
+            detail_height,
             ..self.clone()
         }
     }

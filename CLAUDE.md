@@ -23,12 +23,18 @@ src/queries.rs  GraphQL documents + variables -> Request (serialises to gh's std
 src/decode.rs   GraphQL `data` (serde_json::Value) -> domain types
 src/cli.rs      clap options -> Config
 src/ui/         the UI's pure parts (no terminal, no clock: `now` is passed in):
-  state.rs      UiState (mode, pending `g`, failure prompt, notice, scroll
-                offsets), apply_effect/notify/expire, settle (scroll to focus)
+  state.rs      UiState (mode, pending `g`, failure prompt, notice, board and
+                detail scroll), apply_effect/notify/expire, settle (scroll to
+                focus, clamp the detail scroll)
   keys.rs       handle_key(&UiState, &State, KeyEvent) -> (UiState, Outcome
-                { msgs, actions }); Action = Quit/OpenUrl/Redraw/Notify; HELP
+                { msgs, actions }); Action = Quit/OpenUrl/Redraw/Notify/Edit;
+                board, detail, picker, prompt and quit-guard keys; HELP
   render.rs     render(frame, &State, &UiState): headers, columns, message
-                line, status line, help and failure overlays
+                line, status line; detail, picker, help and failure overlays
+  detail.rs     the detail view's lines, pre-wrapped to a width; its box; HELP
+  picker.rs     Picker (kind, item, cursor) -> menu(): choices derived from
+                the live state each frame, each carrying its Msg
+  editor.rs     $VISUAL/$EDITOR/vi command; decide(edit, success, text) -> Msg
   card.rs       a card's content lines, height and border style
   layout.rs     column widths, sideways scroll, scroll-to-focused-card
   text.rs       display-width fitting (unicode-width), word split, wrap
@@ -40,21 +46,29 @@ src/shell/      the impure part of the library:
                 thread and sends Msgs down an mpsc channel
   app.rs        the app loop: settle + draw, poll keys, drain the channel;
                 dispatch = update, then Runner::run each effect and apply the
-                UI effects it hands back; browser (open/xdg-open) and
-                clipboard (pbcopy; wl-copy/xclip elsewhere)
+                UI effects it hands back; browser (open/xdg-open), clipboard
+                (pbcopy; wl-copy/xclip elsewhere), and suspending the terminal
+                for the editor
+  editor.rs     run the editor on an exclusive temp .md file, read it back,
+                remove it
 src/main.rs     parse the options, ratatui::run(app::run)
 examples/       requests.rs (every request, for check-schema), load_board.rs
 scripts/check-schema.sh   validate every document against GitHub's live schema
 ```
-
-Not yet ported: the detail view (`Enter` says "not yet").
 
 UI-only state lives in `ui::UiState`, never in `model::State`. Each frame
 the loop calls `UiState::settle(&State, area)` (pure: scrolls so the focused
 card is whole on screen, columns by whole cards) and then `render`, which
 uses the offsets as they are. Keys go through `handle_key`; its messages go
 through `update` like any other, and its `Action`s are what only the shell can
-do. A failure prompt waits while a text prompt (`/`, `n`) is open.
+do. A failure prompt waits while a text prompt (`/`, `n`) or the quit
+question is open.
+
+The detail view is open exactly when `state.detail` is set (the reducer owns
+that); only its scroll position is UI state. Pickers store no choices: they
+are re-derived from the state, so the assignee picker's ticks follow each
+optimistic toggle. `q`/`Ctrl-c` with queued or in-flight ops asks before
+quitting (failed ops do not count) — a deliberate difference from the Lua.
 
 `queries.rs` documents are copied verbatim from the Lua plugin, which probed
 them against the live API. Keep fragments per document exact: GraphQL rejects
@@ -122,12 +136,20 @@ Use `nix develop -c <cmd>` outside direnv. Always run `cargo fmt`, clippy and
   changes), driven through the real reducer where it matters: search prompt
   (live, Enter keeps, Esc restores), new-issue prompt, failure prompt, help,
   notices, scroll-to-focus.
+- `tests/ui_detail.rs` — the detail view, pickers and quit guard: keys as
+  data through the reducer (scrolling clamps via `settle`), and snapshots
+  (loading, loaded, failed load, scrolled long body, live pending/failed
+  marks, pickers, help).
+- `tests/editor.rs` — `shell::editor::edit` against fake editor scripts
+  (initial text, `.md` file, argv, `:cq`, temp file removed), then
+  `ui::editor::decide` through the reducer.
 - `tests/ui_render.rs` — insta snapshots of `render` on a 100x30
   `TestBackend` (`tests/snapshots/`); border and priority colours are
   asserted on buffer cells since snapshots carry no colour. After a
   deliberate rendering change: `cargo insta test`, read every `.snap.new`,
   then `cargo insta accept`.
-- Unit tests in `src/ui/{text,layout,card,render}.rs` and `src/cli.rs`.
+- Unit tests in `src/ui/{text,layout,card,render,detail,editor}.rs` and
+  `src/cli.rs`.
 - `tests/common/mod.rs` — synthetic data; `tests/common/gh.rs` encodes domain
   types into GitHub's response shapes. **No real project data in fixtures**;
   the board is private.

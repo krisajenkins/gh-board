@@ -133,10 +133,11 @@ fn o_does_nothing_without_a_board() {
 }
 
 #[test]
-fn enter_says_the_detail_view_is_not_here_yet() {
-    let out = on_board(key(KeyCode::Enter));
-    assert!(out.msgs.is_empty());
-    assert!(matches!(&out.actions[..], [Action::Notify(_, Level::Info)]));
+fn enter_opens_the_detail() {
+    assert_eq!(
+        on_board(key(KeyCode::Enter)),
+        msgs(vec![Msg::OpenDetail { item_id: None }])
+    );
 }
 
 #[test]

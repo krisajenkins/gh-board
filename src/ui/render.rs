@@ -8,12 +8,13 @@ use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 
 use crate::model::{self, BoardView, Column, State};
 use crate::types::Meta;
-use crate::ui::card;
 use crate::ui::keys::HELP;
 use crate::ui::layout::{GAP, column_layout, fitting};
+use crate::ui::picker::{self, Menu};
 use crate::ui::state::{Areas, Mode, UiState};
 use crate::ui::text::{Segments, compose, fit, width, wrap};
 use crate::ui::theme;
+use crate::ui::{card, detail};
 use crate::update::Level;
 
 /// Draw everything. Scroll offsets are used as they are: call
@@ -28,13 +29,133 @@ pub fn render(frame: &mut Frame, state: &State, ui: &UiState) {
     }
     render_message_line(frame, ui, areas.message);
     render_status(frame, state, areas.status);
-    let typing = matches!(ui.mode, Mode::Search { .. } | Mode::NewIssue { .. });
+    if state.detail.is_some() {
+        render_detail(frame, state, ui);
+    }
+    if let Mode::Picker(picker) = &ui.mode
+        && let Some(menu) = picker::menu(state, picker)
+    {
+        render_picker(frame, &menu, picker.cursor);
+    }
+    let typing = matches!(
+        ui.mode,
+        Mode::Search { .. } | Mode::NewIssue { .. } | Mode::ConfirmQuit { .. }
+    );
     if let Some(op) = ui.prompt.as_ref().filter(|_| !typing) {
         let err = op.err.as_deref().unwrap_or("?");
         render_failure(frame, &format!("{} failed: {err}", op.desc));
     } else if ui.mode == Mode::Help {
-        render_help(frame);
+        let (title, keys) = if state.detail.is_some() {
+            (" detail keys ", detail::HELP)
+        } else {
+            (" gh-board keys ", HELP)
+        };
+        render_help(frame, title, keys);
     }
+}
+
+fn render_detail(frame: &mut Frame, state: &State, ui: &UiState) {
+    let rect = detail::rect(frame.area());
+    let lines = detail::lines(state, detail::inner_width(rect));
+    let height = detail::inner_height(rect);
+    let first = ui.detail_scroll.min(lines.len().saturating_sub(height));
+    let title = match detail::card(state).and_then(|c| c.number) {
+        Some(n) => format!(" #{n} "),
+        None => " issue ".into(),
+    };
+    let position = if lines.len() > height {
+        let last = (first + height).min(lines.len());
+        format!(" {}-{last}/{} ", first + 1, lines.len())
+    } else {
+        String::new()
+    };
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(theme::CARD_FOCUS)
+        .title(Line::from(title).centered())
+        .title_bottom(Line::styled(
+            fit(
+                detail::HINT,
+                usize::from(rect.width).saturating_sub(position.len() + 4),
+            ),
+            theme::DIM,
+        ))
+        .title_bottom(Line::from(position).right_aligned());
+    let shown: Vec<Line> = lines.into_iter().skip(first).take(height).collect();
+    frame.render_widget(Clear, rect);
+    frame.render_widget(block, rect);
+    let inner = Rect {
+        x: rect.x + 2,
+        y: rect.y + 1,
+        width: rect.width.saturating_sub(4),
+        height: rect.height.saturating_sub(2),
+    };
+    frame.render_widget(Paragraph::new(shown), inner);
+}
+
+fn render_picker(frame: &mut Frame, menu: &Menu, cursor: usize) {
+    let area = frame.area();
+    let max_h = usize::from(area.height).saturating_sub(4).max(1);
+    let rows: Vec<(String, bool)> = if menu.loading {
+        vec![("loading…".into(), false)]
+    } else if menu.choices.is_empty() {
+        vec![("(nothing to pick)".into(), false)]
+    } else {
+        menu.choices
+            .iter()
+            .map(|c| {
+                let mark = if c.marked { menu.mark } else { " " };
+                (format!(" {mark} {} ", c.label), true)
+            })
+            .collect()
+    };
+    let visible = rows.len().min(max_h.saturating_sub(2)).max(1);
+    let first = if cursor < visible {
+        0
+    } else {
+        cursor + 1 - visible
+    };
+    let hint = if menu.stays_open {
+        " Enter toggles · Esc done "
+    } else {
+        " Enter picks · Esc cancels "
+    };
+    let title = format!(" {} ", menu.title);
+    let w = rows
+        .iter()
+        .map(|(l, _)| width(l))
+        .chain([width(&title), width(hint)])
+        .max()
+        .unwrap_or(0)
+        + 4;
+    let w = w.min(usize::from(area.width).saturating_sub(2));
+    let lines: Vec<Line> = rows
+        .into_iter()
+        .enumerate()
+        .skip(first)
+        .take(visible)
+        .map(|(i, (text, pickable))| {
+            let text = fit(&text, w.saturating_sub(2));
+            if !pickable {
+                Line::styled(format!(" {text}"), theme::DIM)
+            } else if i == cursor {
+                Line::styled(
+                    format!("{text:<0$}", w.saturating_sub(2)),
+                    theme::HEADER_FOCUS,
+                )
+            } else {
+                Line::raw(text)
+            }
+        })
+        .collect();
+    let rect = centered(area, w, lines.len() + 2);
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(theme::CARD_FOCUS)
+        .title(title)
+        .title_bottom(Line::styled(hint, theme::DIM).right_aligned());
+    frame.render_widget(Clear, rect);
+    frame.render_widget(Paragraph::new(lines).block(block), rect);
 }
 
 /// Before the board arrives (or when it has no columns).
@@ -177,6 +298,22 @@ fn render_message_line(frame: &mut Frame, ui: &UiState, area: Rect) {
     let (prompt, input) = match &ui.mode {
         Mode::Search { input, .. } => ("/", input),
         Mode::NewIssue { input } => ("New issue title: ", input),
+        Mode::ConfirmQuit { pending } => {
+            let what = if *pending == 1 {
+                "1 change is".to_string()
+            } else {
+                format!("{pending} changes are")
+            };
+            let line = compose(
+                vec![(
+                    format!("{what} still being sent. Quit anyway? (y/n)"),
+                    theme::WARN,
+                )],
+                w,
+            );
+            frame.render_widget(Paragraph::new(line), area);
+            return;
+        }
         _ => {
             if let Some(notice) = &ui.notice {
                 let style = match notice.level {
@@ -295,8 +432,8 @@ fn centered(area: Rect, w: usize, h: usize) -> Rect {
     )
 }
 
-fn render_help(frame: &mut Frame) {
-    let lines: Vec<Line> = HELP
+fn render_help(frame: &mut Frame, title: &str, keys: &[(&str, &str)]) {
+    let lines: Vec<Line> = keys
         .iter()
         .map(|(key, desc)| {
             Line::from(vec![
@@ -310,7 +447,7 @@ fn render_help(frame: &mut Frame) {
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(theme::CARD_FOCUS)
-        .title(" gh-board keys ")
+        .title(title.to_string())
         .title_bottom(Line::from(" any key closes ").right_aligned());
     frame.render_widget(Clear, area);
     frame.render_widget(Paragraph::new(lines).block(block), area);

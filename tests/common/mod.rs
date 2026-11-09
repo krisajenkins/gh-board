@@ -204,3 +204,65 @@ pub fn with_failed_op() -> (State, Op) {
         .expect("a failure prompt");
     (s, op)
 }
+
+pub fn comment(n: u64, author: &str, body: &str) -> gh_board::types::Comment {
+    gh_board::types::Comment {
+        id: format!("c{n}"),
+        author: author.into(),
+        body: body.into(),
+        created_at: format!("2025-01-{:02}T10:00:00Z", n.min(28)),
+    }
+}
+
+/// The standard board with #3's detail open but not yet loaded.
+pub fn detail_loading() -> State {
+    let s = step(loaded(), Msg::Focus(gh_board::update::Direction::Down));
+    step(s, Msg::OpenDetail { item_id: None })
+}
+
+/// #3's detail, loaded with this body and comments (`total` may be more).
+pub fn detail_with(body: &str, comments: Vec<gh_board::types::Comment>, total: u64) -> State {
+    let s = detail_loading();
+    let seq = s.detail.as_ref().map_or(0, |d| d.seq);
+    step(
+        s,
+        Msg::DetailLoaded {
+            seq,
+            data: gh_board::types::DetailData {
+                body: body.into(),
+                comments,
+                total,
+            },
+        },
+    )
+}
+
+/// #3's detail with a short description and two comments.
+pub fn detail_open() -> State {
+    detail_with(
+        "Draft the post.\n\nThen ask for review.",
+        vec![
+            comment(1, "zed", "I can review it."),
+            comment(2, "amy", "Thanks!"),
+        ],
+        5,
+    )
+}
+
+/// Assignable users for the standard board's repo.
+pub fn with_assignable(s: State) -> State {
+    step(
+        s,
+        Msg::AssignableLoaded {
+            repo_id: "r-plans".into(),
+            users: vec![
+                user("u-amy", "amy"),
+                User {
+                    name: Some("Zed Zedson".into()),
+                    ..user("u-zed", "zed")
+                },
+                me(),
+            ],
+        },
+    )
+}

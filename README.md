@@ -7,9 +7,8 @@ edit, with every change shown immediately and confirmed in the background.
 A port of [gh-board.nvim](../nvim/gh-board.nvim) to Rust and
 [ratatui](https://ratatui.rs).
 
-> **Status: early.** The board works: browse, filter, search, move cards and
-> create issues. The card detail view (comments, editing, pickers) is not
-> ported yet.
+> **Status: early.** Everything in the Neovim plugin is here: the board,
+> filters, search, the card detail view, pickers and editing in `$EDITOR`.
 
 ## Requirements
 
@@ -57,15 +56,43 @@ the board scrolls sideways.
 | `D`             | Show / hide the `--hidden` columns.                           |
 | `R`             | Reload everything from GitHub.                                |
 | `!`             | Review failed changes.                                        |
+| `Enter`         | Open the card's detail view.                                  |
 | `o`             | Open the card in the browser.                                 |
 | `?`             | Key help.                                                     |
-| `q` `Ctrl-c`    | Quit. Nothing is saved.                                       |
+| `q` `Ctrl-c`    | Quit. Nothing is saved. If changes are still being sent, asks first. |
 
 In the search and new-issue prompts, `Backspace`, `Ctrl-w` and `Ctrl-u` edit.
 Search syntax is as in
 [gh-board.nvim](../nvim/gh-board.nvim#search): space-separated fuzzy words
 matched against `#number`, title, `@assignee`, labels and priority; a capital
 makes a word case-sensitive; a leading `'` matches exactly.
+
+### The detail view
+
+`Enter` opens the card's fields, description and latest 50 comments (oldest
+first). It follows the board live: a change shows at once, marked `~` until
+GitHub confirms it or `!` if it failed.
+
+| Key             | Action                                                        |
+| --------------- | ------------------------------------------------------------- |
+| `j k` `Ctrl-d` `Ctrl-u` | Scroll; `gg` / `G` top / bottom.                      |
+| `e`             | Edit the description in your editor.                          |
+| `c`             | Write a comment in your editor.                               |
+| `s` / `p`       | Status / priority picker (priority has a "None").             |
+| `a`             | Assignee picker: each `Enter` toggles a user; `Esc` closes.   |
+| `m` / `u`       | Assign me / unassign everyone.                                |
+| `x`             | Close (Completed / Not planned), or reopen a closed issue.    |
+| `<` `>` `!`     | As on the board.                                              |
+| `o`             | Open in the browser.                                          |
+| `r`             | Reload.                                                       |
+| `q` `Esc`       | Close the detail view.                                        |
+
+Pickers: `j`/`k` or arrows to move, `Enter` to pick, `Esc` to cancel; the
+current value is marked `●`, assigned users `✓`.
+
+The editor is `$VISUAL`, else `$EDITOR`, else `vi`, run on a temporary `.md`
+file. Save and quit to send; quit with an error (`:cq` in Vim) to discard. An
+empty comment is not posted.
 
 When a change fails, a prompt offers `r` Retry, `a` Abandon (the card goes
 back to how GitHub has it), or `Esc` to decide later (`!` brings it back).

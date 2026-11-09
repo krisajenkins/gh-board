@@ -6,8 +6,11 @@
 //! &UiState)` onto a frame.
 
 pub mod card;
+pub mod detail;
+pub mod editor;
 pub mod keys;
 pub mod layout;
+pub mod picker;
 pub mod render;
 pub mod state;
 pub mod text;
