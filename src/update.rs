@@ -171,7 +171,7 @@ pub enum Effect {
     },
     Mutate {
         op: Op,
-        meta: Meta,
+        meta: Box<Meta>,
     },
     FetchBoard {
         seq: u64,
@@ -250,10 +250,8 @@ fn handle(s: &mut State, msg: Msg, fx: &mut Fx) {
         } => set_priority(s, fx, &item_id, priority_id),
         Msg::ToggleAssignee { item_id, user } => {
             if let Some(card) = actionable(s, fx, Some(&item_id)) {
-                let user = User {
-                    id: user.id,
-                    login: user.login,
-                };
+                // The name is for pickers; it is not part of an assignment.
+                let user = User { name: None, ..user };
                 if card.is_assigned(&user.id) {
                     assign(s, fx, &card, vec![], vec![user]);
                 } else {
@@ -381,7 +379,7 @@ fn send(s: &State, fx: &mut Fx, op: &Op) {
     if let Some(meta) = &s.meta {
         fx.push(Effect::Mutate {
             op: op.clone(),
-            meta: meta.clone(),
+            meta: Box::new(meta.clone()),
         });
     }
 }

@@ -19,11 +19,19 @@ src/types.rs    domain types, already decoded (Card, Field, Meta, Board, Config.
 src/model.rs    State, Op, Focus; derived views: the fold, columns, focus, target repo
 src/update.rs   the reducer: update(State, Msg) -> (State, Vec<Effect>)
 src/search.rs   fuzzy card search (per-field subsequence, smart case, 'exact)
+src/queries.rs  GraphQL documents + variables -> Request (serialises to gh's stdin JSON)
+src/decode.rs   GraphQL `data` (serde_json::Value) -> domain types
 src/main.rs     the shell (placeholder for now)
 ```
 
-Not yet ported: decode (GraphQL JSON -> types), queries, the `gh` transport,
-the effect interpreter, and the ratatui UI.
+Not yet ported: the `gh` transport, the effect interpreter (including the
+three-step create: `create_issue` -> `add_to_project` -> `set_status`, with
+`OpProgress` after the first), and the ratatui UI.
+
+`queries.rs` documents are copied verbatim from the Lua plugin, which probed
+them against the live API. Keep fragments per document exact: GraphQL rejects
+a document with an unused fragment, so `with_issue`/`with_item` attach only
+what the document spreads.
 
 The library is pure: no I/O, no terminal, no clock. Anything that needs the
 outside world is an `Effect`; its outcome comes back as a `Msg`.
@@ -72,7 +80,11 @@ Use `nix develop -c <cmd>` outside direnv. Always run `cargo fmt`, clippy and
   intent-ordered sends, in-flight ops == outstanding requests, base == GitHub,
   the view always equals the user's intent while GitHub succeeds, and abandon
   is a rollback. When adding an op kind, teach `Sim::respond` about it.
-- `tests/common/mod.rs` — synthetic data. **No real project data in fixtures**;
+- `tests/decode.rs` — decoders, including a proptest round trip (any `Card`
+  -> API JSON -> decode == the card) and a no-panic check on arbitrary JSON.
+- `tests/queries.rs` — documents, variables, and op -> request mapping.
+- `tests/common/mod.rs` — synthetic data; `tests/common/gh.rs` encodes domain
+  types into GitHub's response shapes. **No real project data in fixtures**;
   the board is private.
 - `proptest-regressions/` holds seeds of past failures: commit them.
 

@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 298eb2a429b5685d93ea9992f65644011d40a9ddfd5fd416e07adbcc8feeafca # shrinks to card = Card { item_id: "item1", issue_id: Some("issue1"), number: None, title: "", url: None, state: None, state_reason: None, repo_id: None, repo: None, status_id: None, priority_id: None, assignees: [], labels: [], temp: false, pending: false, failed: false }

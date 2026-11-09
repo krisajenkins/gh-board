@@ -9,6 +9,8 @@ pub type ItemId = String;
 pub struct User {
     pub id: String,
     pub login: String,
+    /// Display name, where GitHub gave one (assignable users, not assignees).
+    pub name: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

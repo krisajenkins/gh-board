@@ -1,6 +1,8 @@
 //! Synthetic board data. No real project data in fixtures.
 #![allow(dead_code)]
 
+pub mod gh;
+
 use gh_board::model::{Op, State, board};
 use gh_board::types::{Board, Card, Cards, Config, Field, FieldOption, IssueState, Meta, User};
 use gh_board::update::{Effect, Msg, update};
@@ -26,6 +28,7 @@ pub fn user(id: &str, login: &str) -> User {
     User {
         id: id.into(),
         login: login.into(),
+        name: None,
     }
 }
 

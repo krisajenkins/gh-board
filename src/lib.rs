@@ -4,7 +4,9 @@
 //! pure: data in, data out, no I/O. The binary is the shell that runs effects
 //! and draws the terminal.
 
+pub mod decode;
 pub mod model;
+pub mod queries;
 pub mod search;
 pub mod types;
 pub mod update;
