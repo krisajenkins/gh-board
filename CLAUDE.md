@@ -21,18 +21,40 @@ src/update.rs   the reducer: update(State, Msg) -> (State, Vec<Effect>)
 src/search.rs   fuzzy card search (per-field subsequence, smart case, 'exact)
 src/queries.rs  GraphQL documents + variables -> Request (serialises to gh's stdin JSON)
 src/decode.rs   GraphQL `data` (serde_json::Value) -> domain types
+src/cli.rs      clap options -> Config
+src/ui/         the UI's pure parts (no terminal, no clock: `now` is passed in):
+  state.rs      UiState (mode, pending `g`, failure prompt, notice, scroll
+                offsets), apply_effect/notify/expire, settle (scroll to focus)
+  keys.rs       handle_key(&UiState, &State, KeyEvent) -> (UiState, Outcome
+                { msgs, actions }); Action = Quit/OpenUrl/Redraw/Notify; HELP
+  render.rs     render(frame, &State, &UiState): headers, columns, message
+                line, status line, help and failure overlays
+  card.rs       a card's content lines, height and border style
+  layout.rs     column widths, sideways scroll, scroll-to-focused-card
+  text.rs       display-width fitting (unicode-width), word split, wrap
+  theme.rs      colours
 src/shell/      the impure part of the library:
   gh.rs         Transport trait; Gh runs `gh api graphql --input -`; parse()
   effects.rs    perform(): one network effect -> requests -> decoded Msgs
                 (incl. the three-step, resumable create); Runner runs it on a
                 thread and sends Msgs down an mpsc channel
-src/main.rs     the app (placeholder for now)
+  app.rs        the app loop: settle + draw, poll keys, drain the channel;
+                dispatch = update, then Runner::run each effect and apply the
+                UI effects it hands back; browser (open/xdg-open) and
+                clipboard (pbcopy; wl-copy/xclip elsewhere)
+src/main.rs     parse the options, ratatui::run(app::run)
 examples/       requests.rs (every request, for check-schema), load_board.rs
 scripts/check-schema.sh   validate every document against GitHub's live schema
 ```
 
-Not yet ported: the ratatui UI and the app loop (dispatch = update, then
-hand each effect to `Runner::run`; it returns UI effects for the UI).
+Not yet ported: the detail view (`Enter` says "not yet").
+
+UI-only state lives in `ui::UiState`, never in `model::State`. Each frame
+the loop calls `UiState::settle(&State, area)` (pure: scrolls so the focused
+card is whole on screen, columns by whole cards) and then `render`, which
+uses the offsets as they are. Keys go through `handle_key`; its messages go
+through `update` like any other, and its `Action`s are what only the shell can
+do. A failure prompt waits while a text prompt (`/`, `n`) is open.
 
 `queries.rs` documents are copied verbatim from the Lua plugin, which probed
 them against the live API. Keep fragments per document exact: GraphQL rejects
@@ -75,6 +97,8 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt
 scripts/check-schema.sh      # after changing any query (talks to GitHub; no side effects)
 cargo run --example load_board -- <owner> <project>   # live read-only load
+cargo run -- --owner <org> --project <n>              # the app
+cargo insta test && cargo insta review                # snapshot changes
 ```
 
 Use `nix develop -c <cmd>` outside direnv. Always run `cargo fmt`, clippy and
@@ -94,13 +118,24 @@ Use `nix develop -c <cmd>` outside direnv. Always run `cargo fmt`, clippy and
 - `tests/shell.rs` — `parse`; `Gh` against a fake `gh` script (argv, stdin);
   `perform` against a scripted `Fake` transport, including create-resume
   driven through the real reducer (`drive`); `Runner`.
+- `tests/ui_keys.rs` — key handling as data (keys -> msgs/actions/UI
+  changes), driven through the real reducer where it matters: search prompt
+  (live, Enter keeps, Esc restores), new-issue prompt, failure prompt, help,
+  notices, scroll-to-focus.
+- `tests/ui_render.rs` — insta snapshots of `render` on a 100x30
+  `TestBackend` (`tests/snapshots/`); border and priority colours are
+  asserted on buffer cells since snapshots carry no colour. After a
+  deliberate rendering change: `cargo insta test`, read every `.snap.new`,
+  then `cargo insta accept`.
+- Unit tests in `src/ui/{text,layout,card,render}.rs` and `src/cli.rs`.
 - `tests/common/mod.rs` — synthetic data; `tests/common/gh.rs` encodes domain
   types into GitHub's response shapes. **No real project data in fixtures**;
   the board is private.
 - `proptest-regressions/` holds seeds of past failures: commit them.
 
-The suite is offline. `check-schema.sh` and `load_board` are the only things
-that talk to GitHub, and neither changes anything.
+The suite is offline. Besides the app itself, `check-schema.sh` and
+`load_board` are the only things that talk to GitHub, and neither changes
+anything.
 
 ## Version control
 

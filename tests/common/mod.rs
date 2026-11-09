@@ -176,3 +176,31 @@ pub fn notifications(fx: &[Effect]) -> Vec<&str> {
 pub fn focused_number(s: &State) -> Option<u64> {
     board(s).focused().and_then(|c| c.number)
 }
+
+/// The standard board after a priority change to #2 failed: the state, and
+/// the op the reducer asks the UI to prompt about.
+pub fn with_failed_op() -> (State, Op) {
+    let (s, fx) = update(
+        loaded(),
+        Msg::SetPriority {
+            item_id: "item2".into(),
+            priority_id: Some("p-low".into()),
+        },
+    );
+    let op_id = mutations(&fx)[0].id;
+    let (s, fx) = update(
+        s,
+        Msg::OpFailed {
+            op_id,
+            err: "rate limited".into(),
+        },
+    );
+    let op = fx
+        .into_iter()
+        .find_map(|e| match e {
+            Effect::PromptFailure { op } => Some(op),
+            _ => None,
+        })
+        .expect("a failure prompt");
+    (s, op)
+}
