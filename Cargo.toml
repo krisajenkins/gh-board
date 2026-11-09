@@ -1,0 +1,13 @@
+[package]
+name = "gh-board"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "A GitHub Projects board in the terminal"
+license = "MIT"
+
+[dependencies]
+ratatui = "0.30"
+
+[dev-dependencies]
+proptest = "1.12"

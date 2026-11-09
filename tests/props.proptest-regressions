@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc f35b6f50178e219e08633f57e0e5086f2f3a5f15f6470e9eadb37742f9332025 # shrinks to actions = [ToggleAssignee(2, 0), SetStatus(2, 1)]
+cc 8e80ad501fbeae4ea763f1434ad71482280541e36a1700a273605f84be57bb81 # shrinks to actions = [ToggleAssignee(4, 0), SetPriority(4, Some(0))]
+cc 797033b79c65d462a4ca9b34bb01548a356ce82e0d6abb40d6661c3b8f6b3328 # shrinks to actions = [SetStatus(4, 1), SetPriority(4, Some(0))]
