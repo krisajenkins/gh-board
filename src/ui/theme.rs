@@ -1,5 +1,5 @@
-//! Colours. Named after the Lua plugin's highlight groups, with the colours its
-//! default links usually resolve to.
+//! Colours, named for what they mark. Plain ANSI colours, so they follow the
+//! terminal's theme.
 
 use ratatui::style::{Color, Modifier, Style};
 

@@ -56,7 +56,7 @@ mod tests {
     }
 
     #[test]
-    fn defaults_match_the_lua_plugin() {
+    fn only_owner_and_project_are_required() {
         assert_eq!(
             config(&["--owner", "acme", "--project", "7"]),
             Config::new("acme", 7)

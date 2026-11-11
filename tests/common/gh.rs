@@ -1,6 +1,6 @@
 //! GitHub-GraphQL-shaped response data, built from the domain types. The
 //! shapes mirror what `queries.rs` selects (checked against the live API by
-//! the Lua plugin); the contents are synthetic.
+//! `scripts/check-schema.sh`); the contents are synthetic.
 
 use serde_json::{Value, json};
 

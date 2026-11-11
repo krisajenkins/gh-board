@@ -2,12 +2,18 @@
 
 ## gh-board
 
-A GitHub Projects board in the terminal: a Rust + ratatui port of
-`~/Work/Tools/nvim/gh-board.nvim`. That plugin's `README.md` describes the
-intended behaviour and its `CLAUDE.md` the GitHub API specifics (priority is an
-org-level issue field, project workflows react to close/status out of band,
-requests go to `gh api graphql --input -` as JSON on stdin). Read both before
-porting a new area; behaviour should match unless there is a reason to differ.
+A GitHub Projects board in the terminal, in Rust with ratatui. `README.md`
+describes the intended behaviour; keep it in step with the keys and options.
+
+GitHub API specifics worth knowing before touching `queries.rs`/`decode.rs`:
+
+- Priority is an **org-level issue field**, not a project field: it is read
+  from and written to the issue, and `--priority-field` names it.
+- The project's own workflows react to closing an issue or changing its status
+  a few seconds later, outside our response (closing moves the item to Done;
+  Done closes the issue). So a confirmed state or status change re-fetches the
+  item after a delay (`update.rs`, `fetch_item`).
+- Every request goes to `gh api graphql --input -` as JSON on stdin.
 
 Runtime requirement: **`gh` on `PATH`**, logged in with `project`, `read:org`
 and `repo` scopes. The app never handles a token.
@@ -68,17 +74,17 @@ The detail view is open exactly when `state.detail` is set (the reducer owns
 that); only its scroll position is UI state. Pickers store no choices: they
 are re-derived from the state, so the assignee picker's ticks follow each
 optimistic toggle. `q`/`Ctrl-c` with queued or in-flight ops asks before
-quitting (failed ops do not count) — a deliberate difference from the Lua.
+quitting (failed ops do not count).
 
-`queries.rs` documents are copied verbatim from the Lua plugin, which probed
-them against the live API. Keep fragments per document exact: GraphQL rejects
+`queries.rs` documents are checked against GitHub's live schema by
+`scripts/check-schema.sh`; run it after changing any of them. Keep fragments per document exact: GraphQL rejects
 a document with an unused fragment, so `with_issue`/`with_item` attach only
 what the document spreads.
 
 Everything outside `shell/` is pure: no I/O, no terminal, no clock. Anything that needs the
 outside world is an `Effect`; its outcome comes back as a `Msg`.
 
-Differences from the Lua design:
+Conventions:
 
 - **Messages carry decoded data.** The shell decodes GraphQL responses and
   sends `BoardLoaded { board }`, `OpOk { result: Result<MutationResult, _> }`
@@ -120,7 +126,7 @@ Use `nix develop -c <cmd>` outside direnv. Always run `cargo fmt`, clippy and
 
 ## Tests
 
-- `tests/update.rs` — the reducer, as data; ported from `test_update.lua`.
+- `tests/update.rs` — the reducer, as data.
 - `tests/props.rs` — proptest: random users against a simulated GitHub that
   answers in any order and sometimes fails. Checks per-card serialisation,
   intent-ordered sends, in-flight ops == outstanding requests, base == GitHub,
@@ -152,8 +158,8 @@ Use `nix develop -c <cmd>` outside direnv. Always run `cargo fmt`, clippy and
 - Unit tests in `src/ui/{text,layout,card,render,detail,editor}.rs` and
   `src/cli.rs`.
 - `tests/common/mod.rs` — synthetic data; `tests/common/gh.rs` encodes domain
-  types into GitHub's response shapes. **No real project data in fixtures**;
-  the board is private.
+  types into GitHub's response shapes. **No real project data in fixtures**:
+  real boards are usually private.
 - `proptest-regressions/` holds seeds of past failures: commit them.
 
 The suite is offline. Besides the app itself, `check-schema.sh` and
