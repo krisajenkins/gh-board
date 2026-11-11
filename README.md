@@ -20,10 +20,31 @@ the [`gh`](https://cli.github.com) CLI, so it never handles a token itself.
   gh auth refresh -s project
   ```
 
+## Install
+
+Prebuilt binaries for Linux (x86_64, aarch64; static musl) and macOS (Intel,
+Apple silicon) are attached to each
+[release](https://github.com/krisajenkins/gh-board/releases). Unpack one and
+put `gh-board` on your `PATH`:
+
+```sh
+tar xzf gh-board-v*-aarch64-apple-darwin.tar.gz
+cp gh-board-v*-aarch64-apple-darwin/gh-board ~/.local/bin/
+```
+
+On macOS, a binary downloaded with a browser is quarantined; clear that with
+`xattr -d com.apple.quarantine ~/.local/bin/gh-board`.
+
+Or build from source with a Rust toolchain (1.88 or later):
+
+```sh
+cargo install --locked --git https://github.com/krisajenkins/gh-board
+```
+
 ## Usage
 
 ```sh
-cargo run --release -- --owner my-org --project 1
+gh-board --owner my-org --project 1
 ```
 
 | Option             | Default    | Meaning                                                       |
