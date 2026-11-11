@@ -1,0 +1,26 @@
+#!/bin/sh
+# A fake editor for tests. Committed rather than written by the tests: writing
+# a script and then running it races with other test threads' forks on Linux
+# (ETXTBSY, "Text file busy").
+#
+#   echo-editor [--echo | --write TEXT] [--exit CODE] [ARG...] FILE
+#
+# --echo replaces FILE with the remaining arguments (one per line, FILE last),
+# a `--` line, then what FILE held. --write replaces it with TEXT. With
+# neither, FILE is left as it was. Exits with CODE (default 0).
+mode=keep
+code=0
+while :; do
+  case $1 in
+    --echo) mode=echo; shift ;;
+    --write) mode=write; text=$2; shift 2 ;;
+    --exit) code=$2; shift 2 ;;
+    *) break ;;
+  esac
+done
+for f; do :; done
+case $mode in
+  echo) { printf '%s\n' "$@" --; cat "$f"; } > "$f.echo" && mv "$f.echo" "$f" ;;
+  write) printf '%s' "$text" > "$f" ;;
+esac
+exit "$code"

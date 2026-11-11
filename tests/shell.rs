@@ -57,34 +57,24 @@ fn parse_falls_back_to_stderr_then_the_exit_code() {
 
 // Gh --------------------------------------------------------------------------
 
-/// A fake `gh` that records its argv and stdin, then prints `response`.
-fn fake_gh(name: &str, response: &str) -> (Gh, std::path::PathBuf) {
-    use std::os::unix::fs::PermissionsExt;
-    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
-    std::fs::create_dir_all(&dir).unwrap();
-    let script = dir.join("gh");
-    std::fs::write(
-        &script,
-        format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{d}/argv'\ncat > '{d}/stdin'\nprintf '%s' '{response}'\n",
-            d = dir.display()
-        ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-    (Gh::new(script), dir)
+/// A fake `gh` that answers with its argv and stdin: see the script.
+fn echo_gh() -> Gh {
+    Gh::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/echo-gh"
+    ))
 }
 
 #[test]
 fn gh_sends_the_request_as_json_on_stdin_never_in_argv() {
-    let (gh, dir) = fake_gh("gh_stdin", r#"{"data":{"ok":true}}"#);
     let request = gh_board::queries::comment("I_1", "@kris can you look?");
-    assert_eq!(gh.graphql(&request), Ok(json!({ "ok": true })));
-    let argv = std::fs::read_to_string(dir.join("argv")).unwrap();
-    assert_eq!(argv, "api\ngraphql\n--input\n-\n");
-    let stdin: Value =
-        serde_json::from_str(&std::fs::read_to_string(dir.join("stdin")).unwrap()).unwrap();
-    assert_eq!(stdin, serde_json::to_value(&request).unwrap());
+    assert_eq!(
+        echo_gh().graphql(&request),
+        Ok(json!({
+            "argv": "api graphql --input -",
+            "stdin": serde_json::to_value(&request).unwrap(),
+        }))
+    );
 }
 
 #[test]

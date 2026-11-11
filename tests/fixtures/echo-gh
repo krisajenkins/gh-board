@@ -1,0 +1,8 @@
+#!/bin/sh
+# A fake `gh` for tests: answers with what it was given, its arguments as
+# `argv` and its stdin (the JSON request) as `stdin`. Committed rather than
+# written by the tests: writing a script and then running it races with other
+# test threads' forks on Linux (ETXTBSY, "Text file busy").
+printf '{"data":{"argv":"%s","stdin":' "$*"
+cat
+printf '}}'

@@ -1,62 +1,39 @@
-//! Running `$EDITOR`, against fake editor scripts, then through the pure
+//! Running `$EDITOR`, against `tests/fixtures/echo-editor`, then through the pure
 //! decision and the reducer.
 
 mod common;
 
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use common::*;
 use gh_board::model::OpKind;
-use gh_board::shell::editor::{Edited, edit};
+use gh_board::shell::editor::edit;
 use gh_board::ui::editor::{self, Edit, EditKind};
 use gh_board::update::{Msg, update};
 
-/// A fake editor: records its argv and what the file held, replaces the file
-/// with `write` (if given), and exits with `code`.
-fn fake_editor(name: &str, write: Option<&str>, code: i32) -> (Vec<String>, PathBuf) {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
-    std::fs::create_dir_all(&dir).unwrap();
-    let script = dir.join("editor");
-    let replace = write
-        .map(|w| format!("printf '%s' '{w}' > \"$f\"\n"))
-        .unwrap_or_default();
-    std::fs::write(
-        &script,
-        format!(
-            "#!/bin/sh\nfor f; do :; done\nprintf '%s\\n' \"$@\" > '{d}/argv'\ncp \"$f\" '{d}/seen'\n{replace}exit {code}\n",
-            d = dir.display()
-        ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-    (vec![script.display().to_string()], dir)
+/// The fake editor, `tests/fixtures/echo-editor`, with its options.
+fn fake_editor(options: &[&str]) -> Vec<String> {
+    std::iter::once(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/echo-editor"
+    ))
+    .chain(options.iter().copied())
+    .map(String::from)
+    .collect()
 }
 
-fn argv(dir: &Path) -> Vec<String> {
-    std::fs::read_to_string(dir.join("argv"))
-        .unwrap()
-        .lines()
-        .map(String::from)
-        .collect()
+/// Split what an `--echo` editor saved into its arguments and what it saw.
+fn echoed(text: &str) -> (Vec<&str>, &str) {
+    let (args, seen) = text.split_once("\n--\n").expect("an echoed file");
+    (args.lines().collect(), seen)
 }
 
 #[test]
 fn the_editor_gets_the_initial_text_in_a_md_file_and_its_edit_comes_back() {
-    let (cmd, dir) = fake_editor("ed_roundtrip", Some("New body"), 0);
-    let out = edit(&cmd, "Old body").unwrap();
-    assert_eq!(
-        out,
-        Edited {
-            success: true,
-            text: "New body".into(),
-        }
-    );
-    assert_eq!(
-        std::fs::read_to_string(dir.join("seen")).unwrap(),
-        "Old body"
-    );
-    let args = argv(&dir);
+    let out = edit(&fake_editor(&["--echo"]), "Old body").unwrap();
+    assert!(out.success);
+    let (args, seen) = echoed(&out.text);
+    assert_eq!(seen, "Old body");
     let file = args.last().expect("a file argument");
     assert!(file.ends_with(".md"), "{file}");
     assert!(!Path::new(file).exists(), "the temp file is removed");
@@ -64,21 +41,18 @@ fn the_editor_gets_the_initial_text_in_a_md_file_and_its_edit_comes_back() {
 
 #[test]
 fn editor_arguments_come_before_the_file() {
-    let (mut cmd, dir) = fake_editor("ed_args", None, 0);
-    cmd.push("--wait".into());
-    edit(&cmd, "").unwrap();
-    let args = argv(&dir);
+    let out = edit(&fake_editor(&["--echo", "--wait"]), "").unwrap();
+    let (args, _) = echoed(&out.text);
     assert_eq!(args.len(), 2);
     assert_eq!(args[0], "--wait");
 }
 
 #[test]
 fn a_non_zero_exit_is_reported_and_the_file_still_removed() {
-    let (cmd, dir) = fake_editor("ed_cq", Some("half written"), 1);
-    let out = edit(&cmd, "").unwrap();
+    let out = edit(&fake_editor(&["--echo", "--exit", "1"]), "").unwrap();
     assert!(!out.success);
-    let file = argv(&dir).pop().unwrap();
-    assert!(!Path::new(&file).exists());
+    let (args, _) = echoed(&out.text);
+    assert!(!Path::new(args.last().unwrap()).exists());
 }
 
 #[test]
@@ -88,18 +62,27 @@ fn a_missing_editor_is_an_error() {
     assert!(edit(&[], "x").is_err());
 }
 
-fn round_trip(name: &str, kind: EditKind, write: Option<&str>, code: i32) -> Vec<OpKind> {
-    let s = detail_open();
+/// Edit `initial` with an editor that saves `write` (or leaves the file as it
+/// was) and exits with `code`, then decide what that means.
+fn edit_and_decide(request: &Edit, write: Option<&str>, code: i32) -> Option<Msg> {
+    let code = code.to_string();
+    let mut options = vec!["--exit", &code];
+    if let Some(text) = write {
+        options.extend(["--write", text]);
+    }
+    let out = edit(&fake_editor(&options), &request.initial).unwrap();
+    editor::decide(request, out.success, &out.text)
+}
+
+fn round_trip(kind: EditKind, write: Option<&str>, code: i32) -> Vec<OpKind> {
     let request = Edit {
         kind,
         initial: "Draft the post.\n\nThen ask for review.".into(),
     };
-    let (cmd, _) = fake_editor(name, write, code);
-    let out = edit(&cmd, &request.initial).unwrap();
-    let Some(msg) = editor::decide(&request, out.success, &out.text) else {
+    let Some(msg) = edit_and_decide(&request, write, code) else {
         return vec![];
     };
-    let (s, _) = update(s, msg);
+    let (s, _) = update(detail_open(), msg);
     s.ops.into_iter().map(|op| op.kind).collect()
 }
 
@@ -107,7 +90,6 @@ fn round_trip(name: &str, kind: EditKind, write: Option<&str>, code: i32) -> Vec
 fn a_saved_comment_is_posted() {
     assert_eq!(
         round_trip(
-            "rt_comment",
             EditKind::Comment {
                 item_id: "item3".into()
             },
@@ -124,7 +106,6 @@ fn a_saved_comment_is_posted() {
 fn an_empty_comment_or_cq_posts_nothing() {
     assert_eq!(
         round_trip(
-            "rt_empty",
             EditKind::Comment {
                 item_id: "item3".into()
             },
@@ -135,7 +116,6 @@ fn an_empty_comment_or_cq_posts_nothing() {
     );
     assert_eq!(
         round_trip(
-            "rt_cq",
             EditKind::Comment {
                 item_id: "item3".into()
             },
@@ -150,7 +130,6 @@ fn an_empty_comment_or_cq_posts_nothing() {
 fn a_saved_description_is_set() {
     assert_eq!(
         round_trip(
-            "rt_body",
             EditKind::Description {
                 item_id: "item3".into()
             },
@@ -167,7 +146,6 @@ fn a_saved_description_is_set() {
 fn an_untouched_description_changes_nothing() {
     assert_eq!(
         round_trip(
-            "rt_same",
             EditKind::Description {
                 item_id: "item3".into()
             },
@@ -180,31 +158,27 @@ fn an_untouched_description_changes_nothing() {
 
 #[test]
 fn feedback_is_sent_with_what_was_saved_and_cq_cancels_it() {
-    let feedback = |name, write, code| {
-        let request = Edit {
-            kind: EditKind::Feedback {
-                title: "Make it pink".into(),
-            },
-            initial: String::new(),
-        };
-        let (cmd, _) = fake_editor(name, write, code);
-        let out = edit(&cmd, &request.initial).unwrap();
-        editor::decide(&request, out.success, &out.text)
+    let request = Edit {
+        kind: EditKind::Feedback {
+            title: "Make it pink".into(),
+        },
+        initial: String::new(),
     };
+    let feedback = |write, code| edit_and_decide(&request, write, code);
     assert_eq!(
-        feedback("rt_feedback", Some("Pinker.\n"), 0),
+        feedback(Some("Pinker.\n"), 0),
         Some(Msg::SendFeedback {
             title: "Make it pink".into(),
             body: "Pinker.".into(),
         })
     );
     assert_eq!(
-        feedback("rt_feedback_blank", None, 0),
+        feedback(None, 0),
         Some(Msg::SendFeedback {
             title: "Make it pink".into(),
             body: String::new(),
         }),
         "saving an empty file sends the title alone"
     );
-    assert_eq!(feedback("rt_feedback_cq", Some("Pinker."), 1), None);
+    assert_eq!(feedback(Some("Pinker."), 1), None);
 }

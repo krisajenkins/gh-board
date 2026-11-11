@@ -135,9 +135,10 @@ Use `nix develop -c <cmd>` outside direnv. Always run `cargo fmt`, clippy and
 - `tests/decode.rs` — decoders, including a proptest round trip (any `Card`
   -> API JSON -> decode == the card) and a no-panic check on arbitrary JSON.
 - `tests/queries.rs` — documents, variables, and op -> request mapping.
-- `tests/shell.rs` — `parse`; `Gh` against a fake `gh` script (argv, stdin);
-  `perform` against a scripted `Fake` transport, including create-resume
-  driven through the real reducer (`drive`); `Runner`.
+- `tests/shell.rs` — `parse`; `Gh` against `tests/fixtures/echo-gh`, which
+  answers with its argv and stdin; `perform` against a scripted `Fake`
+  transport, including create-resume driven through the real reducer
+  (`drive`); `Runner`.
 - `tests/ui_keys.rs` — key handling as data (keys -> msgs/actions/UI
   changes), driven through the real reducer where it matters: search prompt
   (live, Enter keeps, Esc restores), new-issue prompt, failure prompt, help,
@@ -146,10 +147,10 @@ Use `nix develop -c <cmd>` outside direnv. Always run `cargo fmt`, clippy and
   data through the reducer (scrolling clamps via `settle`), and snapshots
   (loading, loaded, failed load, scrolled long body, live pending/failed
   marks, pickers, help).
-- `tests/editor.rs` — `shell::editor::edit` against fake editor scripts
-  (initial text, `.md` file, argv, `:cq`, temp file removed), then
-  `ui::editor::decide` through the reducer (comments, descriptions, and
-  feedback, whose `:cq` cancels sending).
+- `tests/editor.rs` — `shell::editor::edit` against
+  `tests/fixtures/echo-editor` (initial text, `.md` file, argv, `:cq`, temp
+  file removed), then `ui::editor::decide` through the reducer (comments,
+  descriptions, and feedback, whose `:cq` cancels sending).
 - `tests/ui_render.rs` — insta snapshots of `render` on a 100x30
   `TestBackend` (`tests/snapshots/`); border and priority colours are
   asserted on buffer cells since snapshots carry no colour. After a
@@ -160,6 +161,9 @@ Use `nix develop -c <cmd>` outside direnv. Always run `cargo fmt`, clippy and
 - `tests/common/mod.rs` — synthetic data; `tests/common/gh.rs` encodes domain
   types into GitHub's response shapes. **No real project data in fixtures**:
   real boards are usually private.
+- Fake executables are committed in `tests/fixtures/`, never written by a
+  test: writing a script then running it races with other threads' forks
+  on Linux (ETXTBSY, "Text file busy").
 - `proptest-regressions/` holds seeds of past failures: commit them.
 
 The suite is offline. Besides the app itself, `check-schema.sh` and
