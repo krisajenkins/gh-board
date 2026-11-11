@@ -4,8 +4,8 @@ A [GitHub Projects](https://docs.github.com/en/issues/planning-and-tracking-with
 board in the terminal: a column-per-status kanban you can filter, search and
 edit, with every change shown immediately and confirmed in the background.
 
-A port of [gh-board.nvim](../nvim/gh-board.nvim) to Rust and
-[ratatui](https://ratatui.rs).
+Written in Rust with [ratatui](https://ratatui.rs); it talks to GitHub through
+the [`gh`](https://cli.github.com) CLI, so it never handles a token itself.
 
 > **Status: early.** Everything in the Neovim plugin is here: the board,
 > filters, search, the card detail view, pickers and editing in `$EDITOR`.
@@ -62,11 +62,23 @@ the board scrolls sideways.
 | `?`             | Key help.                                                     |
 | `q` `Ctrl-c`    | Quit. Nothing is saved. If changes are still being sent, asks first. |
 
-In the search, new-issue and feedback prompts, `Backspace`, `Ctrl-w` and `Ctrl-u` edit.
-Search syntax is as in
-[gh-board.nvim](../nvim/gh-board.nvim#search): space-separated fuzzy words
-matched against `#number`, title, `@assignee`, labels and priority; a capital
-makes a word case-sensitive; a leading `'` matches exactly.
+In the search, new-issue and feedback prompts, `Backspace`, `Ctrl-w` and
+`Ctrl-u` edit.
+
+### Search
+
+Search is fuzzy, in the style of fzf. Each card is searched on what it shows:
+`#number`, title, `@assignee` for each assignee, each label, and the priority.
+
+- Words are separated by spaces, and a card must match every word.
+- A word matches a field when its letters appear in it in order, not
+  necessarily together: `rlnts` matches "Release notes".
+- Each word must match within one field: `alice blog` can match an assignee
+  and a label, but a single word never spans two fields.
+- Smart case: an all-lower-case word ignores case; a word with a capital in it
+  is case-sensitive.
+- A leading `'` matches exactly: `'idc` matches "idc" but not "in dev
+  channel".
 
 ### The detail view
 
