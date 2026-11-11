@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use common::*;
 use gh_board::model::State;
+use gh_board::ui::editor::{Edit, EditKind};
 use gh_board::ui::{Action, Mode, Outcome, UiState, handle_key};
 use gh_board::update::{Direction, Effect, Level, Msg, Towards, update};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -345,6 +346,68 @@ fn creating_puts_a_new_card_on_the_board() {
             .values()
             .any(|c| c.temp && c.title == "X")
     );
+}
+
+// The feedback prompt ---------------------------------------------------------
+
+#[test]
+fn shift_f_prompts_for_a_title_then_edits_the_description() {
+    let (ui, _, sent) = press(
+        UiState::default(),
+        loaded(),
+        &[ch('F'), ch(' '), ch('O'), ch('k'), ch(' ')],
+    );
+    assert_eq!(
+        ui.mode,
+        Mode::Feedback {
+            input: " Ok ".into()
+        }
+    );
+    assert!(sent.is_empty(), "typing feedback sends nothing");
+    let (ui, out) = handle_key(&ui, &loaded(), key(KeyCode::Enter));
+    assert_eq!(ui.mode, Mode::Board);
+    assert_eq!(
+        out,
+        actions(vec![Action::Edit(Edit {
+            kind: EditKind::Feedback { title: "Ok".into() },
+            initial: String::new(),
+        })]),
+        "Enter sends nothing yet: the description comes next"
+    );
+}
+
+#[test]
+fn blank_feedback_sends_nothing_and_esc_cancels() {
+    let (ui, _, _) = press(UiState::default(), loaded(), &[ch('F'), ch(' ')]);
+    let (ui, out) = handle_key(&ui, &loaded(), key(KeyCode::Enter));
+    assert_eq!((ui.mode, out), (Mode::Board, Outcome::default()));
+
+    let (ui, _, sent) = press(
+        UiState::default(),
+        loaded(),
+        &[ch('F'), ch('x'), key(KeyCode::Esc)],
+    );
+    assert_eq!(ui.mode, Mode::Board);
+    assert!(sent.is_empty());
+}
+
+#[test]
+fn feedback_leaves_the_board_alone() {
+    let before = loaded();
+    let (_, s, _) = press(
+        UiState::default(),
+        before.clone(),
+        &[ch('F'), ch('X'), key(KeyCode::Enter)],
+    );
+    let (s, _) = update(
+        s,
+        Msg::SendFeedback {
+            title: "X".into(),
+            body: "Y".into(),
+        },
+    );
+    assert_eq!(gh_board::model::view(&s), gh_board::model::view(&before));
+    assert!(s.ops.is_empty(), "feedback is not an op");
 }
 
 // Help ------------------------------------------------------------------------

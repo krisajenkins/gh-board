@@ -186,3 +186,29 @@ fn a_create_is_not_a_single_request() {
     });
     assert!(queries::for_op(&create, &meta(), &config()).is_err());
 }
+
+#[test]
+fn feedback_goes_to_gh_boards_repo_and_says_where_it_came_from() {
+    let (owner, name) = queries::FEEDBACK_REPO;
+    assert_eq!(
+        queries::repository_id(owner, name).variables,
+        json!({ "owner": "krisajenkins", "name": "gh-board" })
+    );
+    let footer = format!(
+        "Filed from inside gh-board {} with `F`.",
+        env!("CARGO_PKG_VERSION")
+    );
+    let r = queries::feedback("R", "Make it pink", "  \n");
+    assert_eq!(r.variables["repoId"], "R");
+    assert_eq!(r.variables["title"], "Make it pink");
+    assert_eq!(
+        r.variables["body"], footer,
+        "no description: the footer alone"
+    );
+    let r = queries::feedback("R", "Make it pink", "\nPinker.\n");
+    assert_eq!(
+        r.variables["body"],
+        format!("Pinker.\n\n---\n{footer}"),
+        "a description goes above the footer"
+    );
+}

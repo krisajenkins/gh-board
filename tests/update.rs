@@ -5,7 +5,7 @@ mod common;
 use common::*;
 use gh_board::model::{Filter, OpKind, OpState, State, view};
 use gh_board::types::{Board, Card, Comment, DetailData, IssueState, StateReason};
-use gh_board::update::{Direction, Effect, Msg, MutationResult, Towards, update};
+use gh_board::update::{Direction, Effect, Level, Msg, MutationResult, Towards, update};
 
 fn row(name: &str, cards: &[u64]) -> (String, Vec<u64>) {
     (name.into(), cards.to_vec())
@@ -700,4 +700,69 @@ fn board_focused_id(s: &State) -> String {
 
 fn get_id(s: &State, id: &str) -> Card {
     view(s).cards[id].clone()
+}
+
+// Feedback --------------------------------------------------------------------
+
+#[test]
+fn feedback_is_sent_without_touching_the_board() {
+    let (s, fx) = update(
+        loaded(),
+        Msg::SendFeedback {
+            title: "Make it pink".into(),
+            body: "Pinker.".into(),
+        },
+    );
+    assert!(fx.contains(&Effect::SendFeedback {
+        title: "Make it pink".into(),
+        body: "Pinker.".into(),
+    }));
+    assert!(s.ops.is_empty());
+    assert_eq!(view(&s), view(&loaded()));
+}
+
+#[test]
+fn sent_feedback_links_to_the_issue_and_failed_feedback_quotes_it() {
+    let (_, fx) = update(
+        loaded(),
+        Msg::FeedbackSent {
+            url: Some("https://x/7".into()),
+        },
+    );
+    assert!(matches!(
+        fx.as_slice(),
+        [Effect::Notify { message, level: Level::Info }] if message.contains("https://x/7")
+    ));
+    let (_, fx) = update(
+        loaded(),
+        Msg::FeedbackFailed {
+            title: "Make it pink".into(),
+            body: String::new(),
+            err: "boom".into(),
+        },
+    );
+    assert!(matches!(
+        fx.as_slice(),
+        [Effect::Notify { message, level: Level::Error }]
+            if message.contains("Make it pink") && message.contains("boom")
+    ));
+}
+
+#[test]
+fn failed_feedback_keeps_its_description_on_the_clipboard_and_the_error_on_screen() {
+    let (_, fx) = update(
+        loaded(),
+        Msg::FeedbackFailed {
+            title: "Make it pink".into(),
+            body: "Pinker.".into(),
+            err: "boom".into(),
+        },
+    );
+    assert!(matches!(
+        fx.as_slice(),
+        [
+            Effect::SaveText { text, .. },
+            Effect::Notify { message, level: Level::Error },
+        ] if text == "Pinker." && message.contains("clipboard")
+    ));
 }

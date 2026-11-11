@@ -1,20 +1,29 @@
-//! Editing a comment or description in the user's `$EDITOR`: which command to
-//! run, and what the result means. Pure; `shell::editor` runs it.
+//! Editing a comment, a description or a feedback description in the user's
+//! `$EDITOR`: which command to run, and what the result means. Pure;
+//! `shell::editor` runs it.
 
 use crate::types::ItemId;
 use crate::update::Msg;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// What the text is for.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditKind {
-    Comment,
-    Description,
+    Comment {
+        item_id: ItemId,
+    },
+    Description {
+        item_id: ItemId,
+    },
+    /// The description of feedback whose title has already been typed.
+    Feedback {
+        title: String,
+    },
 }
 
 /// A request to edit text, for the shell to carry out.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Edit {
     pub kind: EditKind,
-    pub item_id: ItemId,
     /// What the file starts with.
     pub initial: String,
 }
@@ -34,22 +43,26 @@ pub fn command(visual: Option<&str>, editor: Option<&str>) -> Vec<String> {
 }
 
 /// What an editor session means: the message to send, if any. A non-zero
-/// exit (`:cq`) discards the text; so does an empty comment. An unchanged
+/// exit (`:cq`) discards the text (and, for feedback, cancels it); so does an
+/// empty comment. Empty feedback is sent with its title alone. An unchanged
 /// description is left to the reducer, which says so.
 pub fn decide(edit: &Edit, success: bool, text: &str) -> Option<Msg> {
     if !success {
         return None;
     }
-    let item_id = edit.item_id.clone();
-    match edit.kind {
-        EditKind::Comment if text.trim().is_empty() => None,
-        EditKind::Comment => Some(Msg::Comment {
-            item_id,
+    match &edit.kind {
+        EditKind::Comment { .. } if text.trim().is_empty() => None,
+        EditKind::Comment { item_id } => Some(Msg::Comment {
+            item_id: item_id.clone(),
             body: text.into(),
         }),
-        EditKind::Description => Some(Msg::SetBody {
-            item_id,
+        EditKind::Description { item_id } => Some(Msg::SetBody {
+            item_id: item_id.clone(),
             body: text.into(),
+        }),
+        EditKind::Feedback { title } => Some(Msg::SendFeedback {
+            title: title.clone(),
+            body: text.trim().into(),
         }),
     }
 }
@@ -61,9 +74,26 @@ mod tests {
     fn edit(kind: EditKind) -> Edit {
         Edit {
             kind,
-            item_id: "item1".into(),
             initial: String::new(),
         }
+    }
+
+    fn comment() -> Edit {
+        edit(EditKind::Comment {
+            item_id: "item1".into(),
+        })
+    }
+
+    fn description() -> Edit {
+        edit(EditKind::Description {
+            item_id: "item1".into(),
+        })
+    }
+
+    fn feedback() -> Edit {
+        edit(EditKind::Feedback {
+            title: "Make it pink".into(),
+        })
     }
 
     #[test]
@@ -83,7 +113,7 @@ mod tests {
     #[test]
     fn a_comment_is_posted_when_saved_with_text() {
         assert_eq!(
-            decide(&edit(EditKind::Comment), true, "Looks good\n"),
+            decide(&comment(), true, "Looks good\n"),
             Some(Msg::Comment {
                 item_id: "item1".into(),
                 body: "Looks good\n".into(),
@@ -93,21 +123,40 @@ mod tests {
 
     #[test]
     fn an_empty_comment_is_dropped_quietly() {
-        assert_eq!(decide(&edit(EditKind::Comment), true, "  \n\n"), None);
+        assert_eq!(decide(&comment(), true, "  \n\n"), None);
     }
 
     #[test]
     fn a_failed_editor_discards_everything() {
-        assert_eq!(decide(&edit(EditKind::Comment), false, "text"), None);
-        assert_eq!(decide(&edit(EditKind::Description), false, "text"), None);
+        assert_eq!(decide(&comment(), false, "text"), None);
+        assert_eq!(decide(&description(), false, "text"), None);
+        assert_eq!(decide(&feedback(), false, "text"), None);
     }
 
     #[test]
     fn a_description_is_set_even_when_empty() {
         assert_eq!(
-            decide(&edit(EditKind::Description), true, ""),
+            decide(&description(), true, ""),
             Some(Msg::SetBody {
                 item_id: "item1".into(),
+                body: String::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn feedback_is_sent_with_its_description_trimmed_or_with_none() {
+        assert_eq!(
+            decide(&feedback(), true, "\nIt should be pinker.\n\n"),
+            Some(Msg::SendFeedback {
+                title: "Make it pink".into(),
+                body: "It should be pinker.".into(),
+            })
+        );
+        assert_eq!(
+            decide(&feedback(), true, "  \n"),
+            Some(Msg::SendFeedback {
+                title: "Make it pink".into(),
                 body: String::new(),
             })
         );

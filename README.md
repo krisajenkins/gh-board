@@ -53,6 +53,7 @@ the board scrolls sideways.
 | `Esc` `Ctrl-l`  | Clear the search (`Ctrl-l` also redraws).                     |
 | `<` / `>`       | Move the card to the previous / next status column.           |
 | `n`             | New issue in the focused column, at the filtered priority.    |
+| `F`             | Send feedback: files an issue on gh-board's own repository. Type a title, then write an optional description in `$EDITOR` (`:cq` cancels). |
 | `D`             | Show / hide the `--hidden` columns.                           |
 | `R`             | Reload everything from GitHub.                                |
 | `!`             | Review failed changes.                                        |
@@ -61,7 +62,7 @@ the board scrolls sideways.
 | `?`             | Key help.                                                     |
 | `q` `Ctrl-c`    | Quit. Nothing is saved. If changes are still being sent, asks first. |
 
-In the search and new-issue prompts, `Backspace`, `Ctrl-w` and `Ctrl-u` edit.
+In the search, new-issue and feedback prompts, `Backspace`, `Ctrl-w` and `Ctrl-u` edit.
 Search syntax is as in
 [gh-board.nvim](../nvim/gh-board.nvim#search): space-separated fuzzy words
 matched against `#number`, title, `@assignee`, labels and priority; a capital
@@ -85,6 +86,7 @@ GitHub confirms it or `!` if it failed.
 | `<` `>` `!`     | As on the board.                                              |
 | `o`             | Open in the browser.                                          |
 | `r`             | Reload.                                                       |
+| `F`             | Send feedback about gh-board itself (as on the board).        |
 | `q` `Esc`       | Close the detail view.                                        |
 
 Pickers: `j`/`k` or arrows to move, `Enter` to pick, `Esc` to cancel; the

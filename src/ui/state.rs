@@ -23,6 +23,8 @@ pub enum Mode {
     Search { before: String, input: String },
     /// `n`: a one-line title prompt.
     NewIssue { input: String },
+    /// `F`: a one-line feedback prompt; it becomes an issue on gh-board's repo.
+    Feedback { input: String },
     /// `?`: the key help overlay.
     Help,
     /// A list popup over the detail view.

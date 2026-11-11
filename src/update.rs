@@ -121,6 +121,21 @@ pub enum Msg {
     Create {
         title: String,
     },
+    /// `F`: file feedback about gh-board itself. Not an op: it never touches
+    /// the board, so it is not serialised, retried or folded.
+    SendFeedback {
+        title: String,
+        /// The description; may be empty.
+        body: String,
+    },
+    FeedbackSent {
+        url: Option<String>,
+    },
+    FeedbackFailed {
+        title: String,
+        body: String,
+        err: String,
+    },
     // Responses to operations
     OpProgress {
         op_id: u64,
@@ -194,6 +209,11 @@ pub enum Effect {
     },
     PromptFailure {
         op: Op,
+    },
+    /// File an issue on gh-board's own repository.
+    SendFeedback {
+        title: String,
+        body: String,
     },
     /// Keep text the user would otherwise lose (an abandoned comment).
     SaveText {
@@ -277,6 +297,31 @@ fn handle(s: &mut State, msg: Msg, fx: &mut Fx) {
         Msg::Comment { item_id, body } => comment(s, fx, &item_id, &body),
         Msg::SetBody { item_id, body } => set_body(s, fx, &item_id, &body),
         Msg::Create { title } => create(s, fx, &title),
+        Msg::SendFeedback { title, body } => {
+            notify(fx, Level::Info, "Sending feedback…".into());
+            fx.push(Effect::SendFeedback { title, body });
+        }
+        Msg::FeedbackSent { url } => {
+            let filed = url.map_or_else(
+                || "Feedback filed".into(),
+                |u| format!("Feedback filed: {u}"),
+            );
+            notify(fx, Level::Info, format!("{filed}. Thanks!"));
+        }
+        Msg::FeedbackFailed { title, body, err } => {
+            // Quote the title: the prompt has gone. Keep the description,
+            // which may be long, on the clipboard. Its own notice comes first
+            // so the error is the one left showing.
+            let mut message = format!("Sending feedback \"{title}\" failed: {err}");
+            if !body.is_empty() {
+                fx.push(Effect::SaveText {
+                    text: body,
+                    what: "The feedback's description".into(),
+                });
+                message.push_str(". Its description is on the clipboard");
+            }
+            notify(fx, Level::Error, message);
+        }
         Msg::OpProgress {
             op_id,
             created_issue_id,

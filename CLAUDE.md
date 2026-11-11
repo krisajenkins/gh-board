@@ -61,7 +61,7 @@ the loop calls `UiState::settle(&State, area)` (pure: scrolls so the focused
 card is whole on screen, columns by whole cards) and then `render`, which
 uses the offsets as they are. Keys go through `handle_key`; its messages go
 through `update` like any other, and its `Action`s are what only the shell can
-do. A failure prompt waits while a text prompt (`/`, `n`) or the quit
+do. A failure prompt waits while a text prompt (`/`, `n`, `F`) or the quit
 question is open.
 
 The detail view is open exactly when `state.detail` is set (the reducer owns
@@ -142,7 +142,8 @@ Use `nix develop -c <cmd>` outside direnv. Always run `cargo fmt`, clippy and
   marks, pickers, help).
 - `tests/editor.rs` — `shell::editor::edit` against fake editor scripts
   (initial text, `.md` file, argv, `:cq`, temp file removed), then
-  `ui::editor::decide` through the reducer.
+  `ui::editor::decide` through the reducer (comments, descriptions, and
+  feedback, whose `:cq` cancels sending).
 - `tests/ui_render.rs` — insta snapshots of `render` on a 100x30
   `TestBackend` (`tests/snapshots/`); border and priority colours are
   asserted on buffer cells since snapshots carry no colour. After a

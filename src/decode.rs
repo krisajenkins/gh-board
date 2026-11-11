@@ -412,6 +412,14 @@ pub fn created_issue(data: &Value) -> Result<(String, Option<String>)> {
     Ok((id.into(), url.map(String::from)))
 }
 
+/// A repository's node id (`queries::repository_id`).
+pub fn repository_id(data: &Value) -> Result<String> {
+    at(data, &["repository", "id"])
+        .and_then(Value::as_str)
+        .map(String::from)
+        .ok_or_else(|| "no such repository, or no access to it".into())
+}
+
 /// The project item made by `addProjectV2ItemById`, as a card.
 pub fn added_item(data: &Value, priority_field_id: Option<&str>) -> Result<Card> {
     let node = at(data, &["addProjectV2ItemById", "item"]).ok_or("no project item in response")?;

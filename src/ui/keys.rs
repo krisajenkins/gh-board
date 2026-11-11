@@ -59,6 +59,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("Esc C-l", "clear the search (C-l also redraws)"),
     ("< >", "move the card to the previous / next status"),
     ("n", "new issue here, at the filtered priority"),
+    ("F", "feedback on gh-board (title, then $EDITOR)"),
     ("D", "show / hide hidden statuses"),
     ("R", "reload everything from GitHub"),
     ("!", "review failed changes"),
@@ -85,7 +86,29 @@ pub fn handle_key(ui: &UiState, state: &State, key: KeyEvent) -> (UiState, Outco
         }
         Mode::NewIssue { input } => {
             let input = input.clone();
-            new_issue_key(ui, input, key)
+            title_key(
+                ui,
+                input,
+                key,
+                |input| Mode::NewIssue { input },
+                |title| Outcome::msg(Msg::Create { title }),
+            )
+        }
+        Mode::Feedback { input } => {
+            let input = input.clone();
+            title_key(
+                ui,
+                input,
+                key,
+                |input| Mode::Feedback { input },
+                // The title first, then the description in $EDITOR.
+                |title| {
+                    Outcome::action(Action::Edit(Edit {
+                        kind: EditKind::Feedback { title },
+                        initial: String::new(),
+                    }))
+                },
+            )
         }
         Mode::ConfirmQuit { .. } => confirm_quit_key(ui, key),
         _ if ui.prompt.is_some() => prompt_key(ui, key),
@@ -133,6 +156,16 @@ fn confirm_quit_key(ui: UiState, key: KeyEvent) -> (UiState, Outcome) {
 
 fn with_mode(ui: UiState, mode: Mode) -> UiState {
     UiState { mode, ..ui }
+}
+
+/// `F`, from the board or the detail view: prompt for feedback.
+fn feedback(ui: UiState) -> UiState {
+    with_mode(
+        ui,
+        Mode::Feedback {
+            input: String::new(),
+        },
+    )
 }
 
 fn picker_key(ui: UiState, state: &State, picker: Picker, key: KeyEvent) -> (UiState, Outcome) {
@@ -229,6 +262,7 @@ fn detail_key(ui: UiState, state: &State, key: KeyEvent) -> (UiState, Outcome) {
         KeyCode::Char('>') => return (ui, Outcome::msg(Msg::MoveCard(Towards::Next))),
         KeyCode::Char('!') => return (ui, Outcome::msg(Msg::ReviewFailures)),
         KeyCode::Char('?') => return (with_mode(ui, Mode::Help), Outcome::default()),
+        KeyCode::Char('F') => return (feedback(ui), Outcome::default()),
         _ => {}
     }
     let Some(card) = detail::card(state) else {
@@ -246,13 +280,7 @@ fn detail_key(ui: UiState, state: &State, key: KeyEvent) -> (UiState, Outcome) {
             }),
         )
     };
-    let edit = |kind, initial: String| {
-        Outcome::action(Action::Edit(Edit {
-            kind,
-            item_id: item_id.clone(),
-            initial,
-        }))
-    };
+    let edit = |kind, initial: String| Outcome::action(Action::Edit(Edit { kind, initial }));
     match key.code {
         KeyCode::Char('o') => match card.url {
             Some(url) => (ui, Outcome::action(Action::OpenUrl(url))),
@@ -305,12 +333,28 @@ fn detail_key(ui: UiState, state: &State, key: KeyEvent) -> (UiState, Outcome) {
                 },
             )
         }
-        KeyCode::Char('c') => (ui, edit(EditKind::Comment, String::new())),
+        KeyCode::Char('c') => (
+            ui,
+            edit(
+                EditKind::Comment {
+                    item_id: item_id.clone(),
+                },
+                String::new(),
+            ),
+        ),
         KeyCode::Char('e') => {
             match crate::model::description(state.detail.as_ref(), &state.ops, &item_id) {
                 Some((body, _)) => {
                     let body = body.to_string();
-                    (ui, edit(EditKind::Description, body))
+                    (
+                        ui,
+                        edit(
+                            EditKind::Description {
+                                item_id: item_id.clone(),
+                            },
+                            body,
+                        ),
+                    )
                 }
                 None => (
                     ui,
@@ -374,11 +418,16 @@ fn search_key(ui: UiState, before: String, input: String, key: KeyEvent) -> (UiS
     }
 }
 
-fn new_issue_key(ui: UiState, input: String, key: KeyEvent) -> (UiState, Outcome) {
-    let board = UiState {
-        mode: Mode::Board,
-        ..ui.clone()
-    };
+/// A one-line title prompt: Enter does `submit(title)` unless it is blank,
+/// Esc or `Ctrl-c` cancel, and anything else edits the input.
+fn title_key(
+    ui: UiState,
+    input: String,
+    key: KeyEvent,
+    mode: impl Fn(String) -> Mode,
+    submit: impl Fn(String) -> Outcome,
+) -> (UiState, Outcome) {
+    let board = with_mode(ui.clone(), Mode::Board);
     if key.code == KeyCode::Esc || ctrl(&key, 'c') {
         return (board, Outcome::default());
     }
@@ -387,20 +436,12 @@ fn new_issue_key(ui: UiState, input: String, key: KeyEvent) -> (UiState, Outcome
         let out = if title.is_empty() {
             Outcome::default()
         } else {
-            Outcome::msg(Msg::Create {
-                title: title.into(),
-            })
+            submit(title.into())
         };
         return (board, out);
     }
     match edit(&input, &key) {
-        Some(input) => (
-            UiState {
-                mode: Mode::NewIssue { input },
-                ..ui
-            },
-            Outcome::default(),
-        ),
+        Some(input) => (with_mode(ui, mode(input)), Outcome::default()),
         None => (ui, Outcome::default()),
     }
 }
@@ -485,6 +526,7 @@ fn board_key(ui: UiState, state: &State, key: KeyEvent) -> (UiState, Outcome) {
                 Outcome::default(),
             );
         }
+        KeyCode::Char('F') => return (feedback(ui), Outcome::default()),
         KeyCode::Char('D') => Outcome::msg(Msg::ToggleHidden),
         KeyCode::Char('R') => Outcome::msg(Msg::Refresh),
         KeyCode::Char('!') => Outcome::msg(Msg::ReviewFailures),

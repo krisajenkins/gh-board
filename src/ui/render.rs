@@ -39,7 +39,10 @@ pub fn render(frame: &mut Frame, state: &State, ui: &UiState) {
     }
     let typing = matches!(
         ui.mode,
-        Mode::Search { .. } | Mode::NewIssue { .. } | Mode::ConfirmQuit { .. }
+        Mode::Search { .. }
+            | Mode::NewIssue { .. }
+            | Mode::Feedback { .. }
+            | Mode::ConfirmQuit { .. }
     );
     if let Some(op) = ui.prompt.as_ref().filter(|_| !typing) {
         let err = op.err.as_deref().unwrap_or("?");
@@ -298,6 +301,7 @@ fn render_message_line(frame: &mut Frame, ui: &UiState, area: Rect) {
     let (prompt, input) = match &ui.mode {
         Mode::Search { input, .. } => ("/", input),
         Mode::NewIssue { input } => ("New issue title: ", input),
+        Mode::Feedback { input } => ("Feedback on gh-board: ", input),
         Mode::ConfirmQuit { pending } => {
             let what = if *pending == 1 {
                 "1 change is".to_string()

@@ -99,6 +99,17 @@ const ITEM3: &str = "item3";
 // Opening and closing ---------------------------------------------------------
 
 #[test]
+fn shift_f_prompts_for_feedback_from_the_detail_too() {
+    let (ui, s, sent, _) = press(UiState::default(), detail_open(), &[ch('F'), ch('x')]);
+    assert_eq!(ui.mode, Mode::Feedback { input: "x".into() });
+    assert!(sent.is_empty());
+    assert!(
+        s.detail.is_some(),
+        "the detail stays open behind the prompt"
+    );
+}
+
+#[test]
 fn enter_on_the_board_opens_the_focused_card() {
     let s = step(loaded(), Msg::Focus(Direction::Down));
     let (ui, s, sent, _) = press(
@@ -215,8 +226,9 @@ fn c_asks_for_an_empty_comment() {
     assert_eq!(
         on_detail(ch('c')),
         actions(vec![Action::Edit(Edit {
-            kind: EditKind::Comment,
-            item_id: ITEM3.into(),
+            kind: EditKind::Comment {
+                item_id: ITEM3.into()
+            },
             initial: String::new(),
         })])
     );
@@ -227,8 +239,9 @@ fn e_edits_the_description_as_shown() {
     assert_eq!(
         on_detail(ch('e')),
         actions(vec![Action::Edit(Edit {
-            kind: EditKind::Description,
-            item_id: ITEM3.into(),
+            kind: EditKind::Description {
+                item_id: ITEM3.into()
+            },
             initial: "Draft the post.\n\nThen ask for review.".into(),
         })])
     );

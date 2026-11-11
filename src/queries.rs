@@ -320,6 +320,46 @@ pub fn create_issue(repo_id: &str, title: &str, priority: Option<(&str, &str)>) 
     )
 }
 
+/// Where `F` files feedback about gh-board itself, as `(owner, name)`.
+pub const FEEDBACK_REPO: (&str, &str) = ("krisajenkins", "gh-board");
+
+const REPOSITORY_ID: &str = r#"
+query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) { id }
+}
+"#;
+
+/// A repository's node id, which `createIssue` needs.
+pub fn repository_id(owner: &str, name: &str) -> Request {
+    request(REPOSITORY_ID, json!({ "owner": owner, "name": name }))
+}
+
+const FEEDBACK: &str = r#"
+mutation($repoId: ID!, $title: String!, $body: String!) {
+  createIssue(input: { repositoryId: $repoId, title: $title, body: $body }) {
+    issue { id url }
+  }
+}
+"#;
+
+/// File feedback about gh-board as an issue. The body is the user's
+/// description (if any) above a footer saying where it came from, so the
+/// version is on record.
+pub fn feedback(repo_id: &str, title: &str, description: &str) -> Request {
+    let footer = format!(
+        "Filed from inside gh-board {} with `F`.",
+        env!("CARGO_PKG_VERSION")
+    );
+    let body = match description.trim() {
+        "" => footer,
+        d => format!("{d}\n\n---\n{footer}"),
+    };
+    request(
+        FEEDBACK,
+        json!({ "repoId": repo_id, "title": title, "body": body }),
+    )
+}
+
 const ADD_TO_PROJECT: &str = r#"
 mutation($projectId: ID!, $contentId: ID!, $statusField: String!) {
   addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {

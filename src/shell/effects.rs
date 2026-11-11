@@ -30,6 +30,7 @@ pub fn is_network(effect: &Effect) -> bool {
             | Effect::FetchItem { .. }
             | Effect::FetchDetail { .. }
             | Effect::Mutate { .. }
+            | Effect::SendFeedback { .. }
     )
 }
 
@@ -119,8 +120,20 @@ pub fn perform(
             }
         }
         Effect::Mutate { op, meta } => mutate(gh, config, op, &meta, &mut dispatch),
+        Effect::SendFeedback { title, body } => dispatch(match send_feedback(gh, &title, &body) {
+            Ok(url) => Msg::FeedbackSent { url },
+            Err(err) => Msg::FeedbackFailed { title, body, err },
+        }),
         Effect::Notify { .. } | Effect::PromptFailure { .. } | Effect::SaveText { .. } => {}
     }
+}
+
+/// Look up gh-board's repository, then file the issue there. Returns its url.
+fn send_feedback(gh: &impl Transport, title: &str, body: &str) -> Result<Option<String>, String> {
+    let (owner, name) = queries::FEEDBACK_REPO;
+    let repo_id = decode::repository_id(&gh.graphql(&queries::repository_id(owner, name))?)?;
+    let (_, url) = decode::created_issue(&gh.graphql(&queries::feedback(&repo_id, title, body))?)?;
+    Ok(url)
 }
 
 /// Every page of the board, decoded as one.

@@ -10,7 +10,7 @@ use common::*;
 use gh_board::model::OpKind;
 use gh_board::shell::editor::{Edited, edit};
 use gh_board::ui::editor::{self, Edit, EditKind};
-use gh_board::update::update;
+use gh_board::update::{Msg, update};
 
 /// A fake editor: records its argv and what the file held, replaces the file
 /// with `write` (if given), and exits with `code`.
@@ -92,7 +92,6 @@ fn round_trip(name: &str, kind: EditKind, write: Option<&str>, code: i32) -> Vec
     let s = detail_open();
     let request = Edit {
         kind,
-        item_id: "item3".into(),
         initial: "Draft the post.\n\nThen ask for review.".into(),
     };
     let (cmd, _) = fake_editor(name, write, code);
@@ -107,7 +106,14 @@ fn round_trip(name: &str, kind: EditKind, write: Option<&str>, code: i32) -> Vec
 #[test]
 fn a_saved_comment_is_posted() {
     assert_eq!(
-        round_trip("rt_comment", EditKind::Comment, Some("Done!\n"), 0),
+        round_trip(
+            "rt_comment",
+            EditKind::Comment {
+                item_id: "item3".into()
+            },
+            Some("Done!\n"),
+            0
+        ),
         vec![OpKind::Comment {
             body: "Done!".into()
         }]
@@ -117,11 +123,25 @@ fn a_saved_comment_is_posted() {
 #[test]
 fn an_empty_comment_or_cq_posts_nothing() {
     assert_eq!(
-        round_trip("rt_empty", EditKind::Comment, Some("  \n"), 0),
+        round_trip(
+            "rt_empty",
+            EditKind::Comment {
+                item_id: "item3".into()
+            },
+            Some("  \n"),
+            0
+        ),
         vec![]
     );
     assert_eq!(
-        round_trip("rt_cq", EditKind::Comment, Some("Done!"), 1),
+        round_trip(
+            "rt_cq",
+            EditKind::Comment {
+                item_id: "item3".into()
+            },
+            Some("Done!"),
+            1
+        ),
         vec![]
     );
 }
@@ -129,7 +149,14 @@ fn an_empty_comment_or_cq_posts_nothing() {
 #[test]
 fn a_saved_description_is_set() {
     assert_eq!(
-        round_trip("rt_body", EditKind::Description, Some("Ship it.\n"), 0),
+        round_trip(
+            "rt_body",
+            EditKind::Description {
+                item_id: "item3".into()
+            },
+            Some("Ship it.\n"),
+            0
+        ),
         vec![OpKind::Body {
             body: "Ship it.".into()
         }]
@@ -139,7 +166,45 @@ fn a_saved_description_is_set() {
 #[test]
 fn an_untouched_description_changes_nothing() {
     assert_eq!(
-        round_trip("rt_same", EditKind::Description, None, 0),
+        round_trip(
+            "rt_same",
+            EditKind::Description {
+                item_id: "item3".into()
+            },
+            None,
+            0
+        ),
         vec![]
     );
+}
+
+#[test]
+fn feedback_is_sent_with_what_was_saved_and_cq_cancels_it() {
+    let feedback = |name, write, code| {
+        let request = Edit {
+            kind: EditKind::Feedback {
+                title: "Make it pink".into(),
+            },
+            initial: String::new(),
+        };
+        let (cmd, _) = fake_editor(name, write, code);
+        let out = edit(&cmd, &request.initial).unwrap();
+        editor::decide(&request, out.success, &out.text)
+    };
+    assert_eq!(
+        feedback("rt_feedback", Some("Pinker.\n"), 0),
+        Some(Msg::SendFeedback {
+            title: "Make it pink".into(),
+            body: "Pinker.".into(),
+        })
+    );
+    assert_eq!(
+        feedback("rt_feedback_blank", None, 0),
+        Some(Msg::SendFeedback {
+            title: "Make it pink".into(),
+            body: String::new(),
+        }),
+        "saving an empty file sends the title alone"
+    );
+    assert_eq!(feedback("rt_feedback_cq", Some("Pinker."), 1), None);
 }

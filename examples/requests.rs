@@ -38,6 +38,14 @@ fn main() {
             queries::create_issue(ID, "schema check", Some((ID, "opt"))),
         ),
         ("add_to_project", queries::add_to_project(ID, ID, "Status")),
+        (
+            "repository_id",
+            queries::repository_id("gh-board-schema-check-no-such-org", "repo"),
+        ),
+        (
+            "feedback",
+            queries::feedback(ID, "schema check", "schema check"),
+        ),
     ];
     for (name, r) in requests {
         println!(

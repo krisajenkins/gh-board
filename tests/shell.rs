@@ -358,6 +358,53 @@ fn a_retried_create_resumes_rather_than_creating_twice() {
     assert!(view(&s).cards.contains_key("item9"));
 }
 
+// Feedback --------------------------------------------------------------------
+
+#[test]
+fn feedback_looks_up_gh_boards_repo_then_files_the_issue_there() {
+    let gh = Fake::new([
+        Ok(json!({ "repository": { "id": "R_gh_board" } })),
+        Ok(json!({ "createIssue": { "issue": { "id": "I1", "url": "https://x/1" } } })),
+    ]);
+    let out = run(
+        &gh,
+        Effect::SendFeedback {
+            title: "Make it pink".into(),
+            body: "Pinker.".into(),
+        },
+    );
+    assert_eq!(
+        out,
+        vec![Msg::FeedbackSent {
+            url: Some("https://x/1".into())
+        }]
+    );
+    assert_eq!(gh.calls(), vec!["repository", "createIssue"]);
+    let seen = gh.seen.lock().unwrap();
+    assert_eq!(seen[1].variables["repoId"], "R_gh_board");
+    assert_eq!(seen[1].variables["title"], "Make it pink");
+    let body = seen[1].variables["body"].as_str().unwrap();
+    assert!(body.starts_with("Pinker.\n\n---\n"), "{body}");
+}
+
+#[test]
+fn feedback_fails_when_the_repo_cannot_be_seen_and_files_nothing() {
+    // A user without access to the repository gets `repository: null`.
+    let gh = Fake::new([Ok(json!({ "repository": null }))]);
+    let out = run(
+        &gh,
+        Effect::SendFeedback {
+            title: "Make it pink".into(),
+            body: "Pinker.".into(),
+        },
+    );
+    assert!(matches!(
+        out.as_slice(),
+        [Msg::FeedbackFailed { title, body, .. }] if title == "Make it pink" && body == "Pinker."
+    ));
+    assert_eq!(gh.calls(), vec!["repository"]);
+}
+
 #[test]
 fn a_delayed_reread_waits_then_reports_the_card() {
     let gh = Fake::new([Ok(json!({ "node": item_json(&card(1)) }))]);

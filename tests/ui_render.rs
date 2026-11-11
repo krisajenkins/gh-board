@@ -237,6 +237,21 @@ fn new_issue_prompt() {
 }
 
 #[test]
+fn feedback_prompt() {
+    let ui = UiState {
+        mode: Mode::Feedback {
+            input: "Make it pink".into(),
+        },
+        ..UiState::default()
+    };
+    let t = draw(&loaded(), &ui);
+    let line: String = (0..W)
+        .map(|x| t.backend().buffer()[(x, H - 2)].symbol().to_string())
+        .collect();
+    assert_eq!(line.trim_end(), "Feedback on gh-board: Make it pink");
+}
+
+#[test]
 fn notice() {
     let ui = UiState::default().notify(
         "Cannot create an issue: no repository".into(),
