@@ -7,8 +7,10 @@ edit, with every change shown immediately and confirmed in the background.
 Written in Rust with [ratatui](https://ratatui.rs); it talks to GitHub through
 the [`gh`](https://cli.github.com) CLI, so it never handles a token itself.
 
-> **Status: early.** Everything in the Neovim plugin is here: the board,
-> filters, search, the card detail view, pickers and editing in `$EDITOR`.
+> **Status: early.** It works day to day (the board, filters, search, a card
+> detail view, pickers and editing in `$EDITOR`), but keys and options may
+> still change. Only organization-owned projects are supported. Press `F` in
+> the app to file feedback.
 
 ## Requirements
 
