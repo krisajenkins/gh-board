@@ -3,10 +3,10 @@ source: tests/ui_render.rs
 expression: t.backend()
 ---
 " Todo (1)                 Blocked (0)              In Progress (0)          Ready (0)               "
-"╭──────────────────────╮   (empty)                  (empty)                  (empty)                "
-"│ #3 Card 3            │                                                                            "
-"│ @amy blog            │                                                                            "
-"╰──────────────────────╯                                                                            "
+"┏━━━━━━━━━━━━━━━━━━━━━━┓   (empty)                  (empty)                  (empty)                "
+"┃ #3 Card 3            ┃                                                                            "
+"┃ @amy blog            ┃                                                                            "
+"┗━━━━━━━━━━━━━━━━━━━━━━┛                                                                            "
 "                                                                                                    "
 "                                                                                                    "
 "                                                                                                    "

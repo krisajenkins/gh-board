@@ -2,6 +2,7 @@
 
 use ratatui::style::Style;
 use ratatui::text::Line;
+use ratatui::widgets::BorderType;
 
 use crate::types::{Card, IssueState, Meta};
 use crate::ui::text::{Segments, compose, split_words, width};
@@ -78,6 +79,16 @@ fn meta_segments(card: &Card, meta: Option<&Meta>) -> Segments {
 /// A card's height on screen, borders included.
 pub fn height(card: &Card, meta: Option<&Meta>, inner: usize) -> usize {
     lines(card, meta, inner).len() + 2
+}
+
+/// The focused card gets heavy lines, so it stands out by shape as well as
+/// colour (bold alone rarely changes box-drawing glyphs).
+pub fn border_type(focused: bool) -> BorderType {
+    if focused {
+        BorderType::Thick
+    } else {
+        BorderType::Rounded
+    }
 }
 
 /// The border colour carries the card's state. Focus wins; the `~`/`!` marker
@@ -170,5 +181,11 @@ mod tests {
         };
         assert_eq!(border_style(&p, false), theme::PENDING);
         assert_eq!(border_style(&card("A"), false), theme::CARD);
+    }
+
+    #[test]
+    fn only_the_focused_card_has_heavy_lines() {
+        assert_eq!(border_type(true), BorderType::Thick);
+        assert_eq!(border_type(false), BorderType::Rounded);
     }
 }

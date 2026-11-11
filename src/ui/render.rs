@@ -283,12 +283,10 @@ impl ColumnView<'_> {
             let card = &cards[first + i];
             let h = to_u16(lines.len() + 2).min(area.bottom().saturating_sub(y));
             let rect = Rect::new(area.x, y, area.width, h);
+            let focused = self.focused_row == Some(first + i);
             let block = Block::bordered()
-                .border_type(BorderType::Rounded)
-                .border_style(card::border_style(
-                    card,
-                    self.focused_row == Some(first + i),
-                ));
+                .border_type(card::border_type(focused))
+                .border_style(card::border_style(card, focused));
             frame.render_widget(Paragraph::new(lines).block(block), rect);
             y += h;
         }

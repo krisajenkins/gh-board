@@ -39,18 +39,24 @@ fn style_at(buf: &Buffer, x: u16, y: u16) -> Style {
     Style::new().fg(cell.fg).add_modifier(cell.modifier)
 }
 
-/// Assert a card's top-left corner is at (x, y) with this border style.
+/// Assert a card's top-left corner is at (x, y) with this border style. The
+/// focused card has heavy lines, the rest rounded ones.
 fn assert_border(buf: &Buffer, x: u16, y: u16, want: Style) {
-    assert_eq!(buf[(x, y)].symbol(), "╭", "a card's corner at ({x}, {y})");
+    let (tl, tr, br) = if want == theme::CARD_FOCUS {
+        ("┏", "┓", "┛")
+    } else {
+        ("╭", "╮", "╯")
+    };
+    assert_eq!(buf[(x, y)].symbol(), tl, "a card's corner at ({x}, {y})");
     let got = style_at(buf, x, y);
     assert_eq!(got.fg, want.fg, "border colour at ({x}, {y})");
     // The bottom-right corner shares it.
     let mut bx = x;
-    while buf[(bx, y)].symbol() != "╮" {
+    while buf[(bx, y)].symbol() != tr {
         bx += 1;
     }
     let mut by = y + 1;
-    while buf[(bx, by)].symbol() != "╯" {
+    while buf[(bx, by)].symbol() != br {
         by += 1;
     }
     assert_eq!(buf[(bx, by)].fg, want.fg.unwrap_or_default());

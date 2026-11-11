@@ -3,11 +3,11 @@ source: tests/ui_render.rs
 expression: "draw(&s, &UiState::default()).backend()"
 ---
 " Todo (3)                 Blocked (0)              In Progress (0)          Ready (0)               "
-"╭──────────────────────╮   (empty)                  (empty)                  (empty)                "
-"│ #42 日本語のタイトル │                                                                            " Hidden by multi-width symbols: [(7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " "), (19, " "), (21, " ")]
-"│     はとても長いので…│                                                                            " Hidden by multi-width symbols: [(7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " "), (19, " "), (21, " ")]
-"│                      │                                                                            "
-"╰──────────────────────╯                                                                            "
+"┏━━━━━━━━━━━━━━━━━━━━━━┓   (empty)                  (empty)                  (empty)                "
+"┃ #42 日本語のタイトル ┃                                                                            " Hidden by multi-width symbols: [(7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " "), (19, " "), (21, " ")]
+"┃     はとても長いので…┃                                                                            " Hidden by multi-width symbols: [(7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " "), (19, " "), (21, " ")]
+"┃                      ┃                                                                            "
+"┗━━━━━━━━━━━━━━━━━━━━━━┛                                                                            "
 "╭──────────────────────╮                                                                            "
 "│ #43 Supercalifragilis│                                                                            "
 "│     ticexpialidocious│                                                                            "
