@@ -62,7 +62,7 @@ jobs:
         run: |
           name="gh-board-${GITHUB_REF_NAME}-${{ matrix.target }}"
           mkdir "$name"
-          cp "target/${{ matrix.target }}/release/gh-board" README.md "$name/"
+          cp "target/${{ matrix.target }}/release/gh-board" README.md LICENSE "$name/"
           tar czf "$name.tar.gz" "$name"
           shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
 
