@@ -173,3 +173,14 @@ anything.
 ## Version control
 
 Jujutsu (jj), git-colocated. Use `jj`; never git commands.
+
+<!-- agent-conventions: maintained by work-items -->
+## Project conventions (cached)
+
+- Verify: `cargo fmt`; `cargo clippy --all-targets -- -D warnings`; `cargo test`; `scripts/check-schema.sh` (only when `src/queries.rs` changes)
+- Format: `cargo fmt` (folded into Verify)
+- Publish: none (releases are tag pushes, the user's call)
+- Item store: `github-issues`
+- Auto-close: `Closes #N`
+- Blocked label: `blocked`
+<!-- /agent-conventions -->
