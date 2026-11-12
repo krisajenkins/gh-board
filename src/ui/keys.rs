@@ -188,7 +188,8 @@ fn picker_key(ui: UiState, state: &State, picker: Picker, key: KeyEvent) -> (UiS
         return (with_mode(ui, Mode::Board), Outcome::default());
     };
     let n = m.choices.len();
-    let cursor = picker.cursor.min(n.saturating_sub(1));
+    let last = n.saturating_sub(1);
+    let cursor = picker.cursor.min(last);
     let moved = |cursor| {
         (
             with_mode(
@@ -201,21 +202,52 @@ fn picker_key(ui: UiState, state: &State, picker: Picker, key: KeyEvent) -> (UiS
             Outcome::default(),
         )
     };
-    match key.code {
-        KeyCode::Esc | KeyCode::Char('q') => (with_mode(ui, Mode::Board), Outcome::default()),
-        _ if ctrl(&key, 'c') => (with_mode(ui, Mode::Board), Outcome::default()),
-        KeyCode::Char('j') | KeyCode::Down => moved((cursor + 1).min(n.saturating_sub(1))),
-        KeyCode::Char('k') | KeyCode::Up => moved(cursor.saturating_sub(1)),
-        KeyCode::Char('g') | KeyCode::Home => moved(0),
-        KeyCode::Char('G') | KeyCode::End => moved(n.saturating_sub(1)),
-        KeyCode::Enter => match m.choices.get(cursor) {
+    let close = || (with_mode(ui.clone(), Mode::Board), Outcome::default());
+    if key.code == KeyCode::Esc || ctrl(&key, 'c') {
+        return close();
+    }
+    if key.code == KeyCode::Enter {
+        return match m.choices.get(cursor) {
             Some(choice) if m.stays_open => (
                 with_mode(ui, Mode::Picker(Picker { cursor, ..picker })),
                 Outcome::msg(choice.msg.clone()),
             ),
             Some(choice) => (with_mode(ui, Mode::Board), Outcome::msg(choice.msg.clone())),
             None => (ui, Outcome::default()),
-        },
+        };
+    }
+    match key.code {
+        KeyCode::Down => return moved((cursor + 1).min(last)),
+        KeyCode::Up => return moved(cursor.saturating_sub(1)),
+        KeyCode::Home => return moved(0),
+        KeyCode::End => return moved(last),
+        _ if ctrl(&key, 'n') => return moved((cursor + 1).min(last)),
+        _ if ctrl(&key, 'p') => return moved(cursor.saturating_sub(1)),
+        _ => {}
+    }
+    if m.filter.is_some() {
+        // Everything else edits the filter, which starts the cursor afresh.
+        return match edit(&picker.filter, &key) {
+            Some(filter) if filter != picker.filter => (
+                with_mode(
+                    ui,
+                    Mode::Picker(Picker {
+                        cursor: 0,
+                        filter,
+                        ..picker
+                    }),
+                ),
+                Outcome::default(),
+            ),
+            _ => (ui, Outcome::default()),
+        };
+    }
+    match key.code {
+        KeyCode::Char('q') => close(),
+        KeyCode::Char('j') => moved((cursor + 1).min(last)),
+        KeyCode::Char('k') => moved(cursor.saturating_sub(1)),
+        KeyCode::Char('g') => moved(0),
+        KeyCode::Char('G') => moved(last),
         _ => (ui, Outcome::default()),
     }
 }
@@ -292,6 +324,7 @@ fn detail_key(ui: UiState, state: &State, key: KeyEvent) -> (UiState, Outcome) {
                 kind,
                 item_id: item_id.clone(),
                 cursor,
+                filter: String::new(),
             }),
         )
     };

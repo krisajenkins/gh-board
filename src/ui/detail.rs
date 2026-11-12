@@ -18,7 +18,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("c", "comment, in $EDITOR"),
     ("s", "status picker"),
     ("p", "priority picker"),
-    ("a", "assignee picker (toggles; Esc closes)"),
+    ("a", "assignees (type to filter; Enter toggles)"),
     ("m", "assign me"),
     ("u", "unassign everyone"),
     ("x", "close (completed / not planned) or reopen"),

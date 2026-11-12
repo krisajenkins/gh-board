@@ -257,6 +257,7 @@ pub fn with_assignable(s: State) -> State {
             repo_id: "r-plans".into(),
             users: vec![
                 user("u-amy", "amy"),
+                user("u-jd", "jdetter"),
                 User {
                     name: Some("Zed Zedson".into()),
                     ..user("u-zed", "zed")

@@ -6,7 +6,7 @@ use common::*;
 use gh_board::model::{OpKind, State, view};
 use gh_board::types::{IssueState, StateReason};
 use gh_board::ui::editor::{Edit, EditKind};
-use gh_board::ui::picker::{Picker, PickerKind, menu};
+use gh_board::ui::picker::{Menu, Picker, PickerKind, menu};
 use gh_board::ui::theme;
 use gh_board::ui::{Action, Mode, Outcome, UiState, handle_key, render};
 use gh_board::update::{Direction, Level, Msg, Towards, update};
@@ -428,12 +428,16 @@ fn assignee_picker_loads_users_it_does_not_have() {
     );
     let m = menu(&s, picker_mode(&ui)).expect("a menu");
     assert!(m.loading);
-    assert!(m.choices.is_empty());
+    assert_eq!(
+        labels(&m),
+        ["Assign to me (@me)"],
+        "assigning me needs no list"
+    );
     // They arrive while the picker is open.
     let s = with_assignable(s);
     let m = menu(&s, picker_mode(&ui)).expect("a menu");
     assert!(!m.loading);
-    assert_eq!(m.choices.len(), 3);
+    assert_eq!(m.choices.len(), 4);
 }
 
 #[test]
@@ -446,28 +450,50 @@ fn assignee_picker_does_not_reload_known_users() {
     assert!(sent.is_empty());
 }
 
+fn labels(m: &Menu) -> Vec<&str> {
+    m.choices.iter().map(|c| c.label.as_str()).collect()
+}
+
+/// The standard board's detail with its assignee picker open.
+fn assignee_picker() -> (UiState, State) {
+    let (ui, s, _, _) = press(
+        UiState::default(),
+        with_assignable(detail_open()),
+        &[ch('a')],
+    );
+    (ui, s)
+}
+
 #[test]
 fn assignee_picks_toggle_and_the_picker_stays_open() {
-    let s = with_assignable(detail_open());
-    let (ui, s, _, _) = press(UiState::default(), s, &[ch('a')]);
+    let (ui, s) = assignee_picker();
     let m = menu(&s, picker_mode(&ui)).expect("a menu");
     assert_eq!(
         m.choices
             .iter()
             .map(|c| (c.label.as_str(), c.marked))
             .collect::<Vec<_>>(),
-        [("@amy", true), ("@me", false), ("@zed (Zed Zedson)", false)],
-        "sorted by login"
+        [
+            ("Assign to me (@me)", false),
+            ("@amy", true),
+            ("@jdetter", false),
+            ("@zed (Zed Zedson)", false)
+        ],
+        "me first, then sorted by login"
     );
     // Toggle zed on, then amy off.
-    let (ui, s, sent, _) = press(ui, s, &[ch('G'), key(KeyCode::Enter)]);
-    assert_eq!(picker_mode(&ui).cursor, 2, "still open, same place");
+    let (ui, s, sent, _) = press(ui, s, &[key(KeyCode::End), key(KeyCode::Enter)]);
+    assert_eq!(picker_mode(&ui).cursor, 3, "still open, same place");
     assert!(matches!(&sent[..], [Msg::ToggleAssignee { user, .. }] if user.login == "zed"));
-    let (ui, s, _, _) = press(ui, s, &[ch('g'), key(KeyCode::Enter)]);
+    let (ui, s, _, _) = press(
+        ui,
+        s,
+        &[key(KeyCode::Home), key(KeyCode::Down), key(KeyCode::Enter)],
+    );
     let m = menu(&s, picker_mode(&ui)).expect("a menu");
     assert_eq!(
         m.choices.iter().map(|c| c.marked).collect::<Vec<_>>(),
-        [false, false, true],
+        [false, false, false, true],
         "ticks follow the optimistic card"
     );
     let logins: Vec<_> = view(&s).cards[ITEM3]
@@ -482,6 +508,130 @@ fn assignee_picks_toggle_and_the_picker_stays_open() {
 }
 
 #[test]
+fn assign_to_me_is_first_and_toggles() {
+    let (ui, s) = assignee_picker();
+    let m = menu(&s, picker_mode(&ui)).expect("a menu");
+    assert_eq!(
+        m.choices.iter().filter(|c| c.label.contains("@me")).count(),
+        1,
+        "the viewer is not listed twice"
+    );
+    let (ui, s, sent, _) = press(ui, s, &[key(KeyCode::Enter)]);
+    assert!(matches!(&sent[..], [Msg::ToggleAssignee { user, .. }] if user.login == "me"));
+    assert!(view(&s).cards[ITEM3].is_assigned("u-me"));
+    let m = menu(&s, picker_mode(&ui)).expect("a menu");
+    assert!(m.choices[0].marked, "the tick follows the optimistic card");
+    let (ui, s, _, _) = press(ui, s, &[key(KeyCode::Enter)]);
+    assert!(!view(&s).cards[ITEM3].is_assigned("u-me"), "and back off");
+    assert!(!menu(&s, picker_mode(&ui)).expect("a menu").choices[0].marked);
+}
+
+#[test]
+fn typing_filters_the_assignees_fuzzily() {
+    let (ui, s) = assignee_picker();
+    let (ui, s, sent, _) = press(ui, s, &[ch('j'), ch('d'), ch('t')]);
+    assert!(sent.is_empty());
+    assert_eq!(picker_mode(&ui).filter, "jdt");
+    let m = menu(&s, picker_mode(&ui)).expect("a menu");
+    assert_eq!(m.filter.as_deref(), Some("jdt"));
+    assert_eq!(labels(&m), ["@jdetter"]);
+    let (_, _, sent, _) = press(ui, s, &[key(KeyCode::Enter)]);
+    assert!(matches!(&sent[..], [Msg::ToggleAssignee { user, .. }] if user.login == "jdetter"));
+}
+
+#[test]
+fn me_finds_the_assign_to_me_row() {
+    let (ui, s) = assignee_picker();
+    let (ui, s, _, _) = press(ui, s, &[ch('m'), ch('e')]);
+    assert_eq!(
+        labels(&menu(&s, picker_mode(&ui)).expect("a menu")),
+        ["Assign to me (@me)"]
+    );
+}
+
+#[test]
+fn the_filter_matches_names_with_smart_case() {
+    let (ui, s) = assignee_picker();
+    let typed = |text: &str| {
+        let keys: Vec<_> = text.chars().map(ch).collect();
+        let (ui, s, _, _) = press(ui.clone(), s.clone(), &keys);
+        labels(&menu(&s, picker_mode(&ui)).expect("a menu"))
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(typed("zedson"), ["@zed (Zed Zedson)"]);
+    assert_eq!(typed("Zedson"), ["@zed (Zed Zedson)"]);
+    assert!(typed("ZEDSON").is_empty(), "a capital is case-sensitive");
+}
+
+#[test]
+fn letters_type_in_the_assignee_picker_but_move_elsewhere() {
+    let (ui, s) = assignee_picker();
+    let (ui, _, sent, _) = press(ui, s, &[ch('j'), ch('k'), ch('g'), ch('G'), ch('q')]);
+    assert!(sent.is_empty());
+    let p = picker_mode(&ui);
+    assert_eq!((p.filter.as_str(), p.cursor), ("jkgGq", 0));
+    // The status picker still moves with them.
+    let (ui, _, _, _) = press(
+        UiState::default(),
+        with_assignable(detail_open()),
+        &[ch('s'), ch('j')],
+    );
+    assert_eq!(picker_mode(&ui).cursor, 1);
+    assert_eq!(picker_mode(&ui).filter, "");
+}
+
+#[test]
+fn ctrl_n_and_ctrl_p_move_in_the_assignee_picker() {
+    let (ui, s) = assignee_picker();
+    let (ui, s, _, _) = press(ui, s, &[ctrl('n'), ctrl('n')]);
+    assert_eq!(picker_mode(&ui).cursor, 2);
+    let (ui, _, _, _) = press(ui, s, &[ctrl('p')]);
+    assert_eq!(picker_mode(&ui).cursor, 1);
+}
+
+#[test]
+fn changing_the_filter_resets_the_cursor_and_deleting_widens_it() {
+    let (ui, s) = assignee_picker();
+    let (ui, s, _, _) = press(ui, s, &[key(KeyCode::End)]);
+    assert_eq!(picker_mode(&ui).cursor, 3);
+    let (ui, s, _, _) = press(ui, s, &[ch('e')]);
+    let p = picker_mode(&ui);
+    assert_eq!((p.filter.as_str(), p.cursor), ("e", 0));
+    let (ui, s, _, _) = press(ui, s, &[ch('t'), ch('t')]);
+    assert_eq!(
+        labels(&menu(&s, picker_mode(&ui)).expect("a menu")),
+        ["@jdetter"]
+    );
+    let (ui, s, _, _) = press(ui, s, &[key(KeyCode::Backspace), key(KeyCode::Backspace)]);
+    assert_eq!(picker_mode(&ui).filter, "e");
+    assert_eq!(
+        labels(&menu(&s, picker_mode(&ui)).expect("a menu")),
+        ["Assign to me (@me)", "@jdetter", "@zed (Zed Zedson)"]
+    );
+    let (ui, s, _, _) = press(ui, s, &[ch('x'), ctrl('u')]);
+    assert_eq!(picker_mode(&ui).filter, "");
+    assert_eq!(menu(&s, picker_mode(&ui)).expect("a menu").choices.len(), 4);
+}
+
+#[test]
+fn esc_closes_the_assignee_picker_with_a_filter_set() {
+    let (ui, s) = assignee_picker();
+    let (ui, _, sent, _) = press(ui, s, &[ch('z'), key(KeyCode::Esc)]);
+    assert_eq!(ui.mode, Mode::Board);
+    assert!(sent.is_empty());
+}
+
+#[test]
+fn enter_with_no_matches_does_nothing() {
+    let (ui, s) = assignee_picker();
+    let (ui, _, sent, _) = press(ui, s, &[ch('q'), ch('q'), key(KeyCode::Enter)]);
+    assert!(matches!(ui.mode, Mode::Picker(_)));
+    assert!(sent.is_empty());
+}
+
+#[test]
 fn a_picker_closes_if_its_card_goes() {
     let s = with_assignable(detail_open());
     let ui = UiState {
@@ -489,6 +639,7 @@ fn a_picker_closes_if_its_card_goes() {
             kind: PickerKind::Status,
             item_id: "gone".into(),
             cursor: 0,
+            filter: String::new(),
         }),
         ..UiState::default()
     };
@@ -665,6 +816,24 @@ fn assignee_picker_loading_then_loaded() {
     assert!(find_row(&draw(&s, &ui), "loading…").is_some());
     let s = with_assignable(s);
     assert_snapshot!(draw(&s, &ui).backend());
+}
+
+#[test]
+fn assignee_picker_filtered() {
+    let (ui, s) = assignee_picker();
+    let (ui, s, _, _) = press(ui, s, &[ch('j'), ch('d'), ch('t')]);
+    let t = draw(&s, &ui);
+    assert!(find_row(&t, "› jdt").is_some());
+    assert_snapshot!(t.backend());
+}
+
+#[test]
+fn assignee_picker_with_no_matches() {
+    let (ui, s) = assignee_picker();
+    let (ui, s, _, _) = press(ui, s, &[ch('q'), ch('q')]);
+    let t = draw(&s, &ui);
+    assert!(find_row(&t, "(no matches)").is_some());
+    assert_snapshot!(t.backend());
 }
 
 #[test]

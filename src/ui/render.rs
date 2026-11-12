@@ -98,31 +98,44 @@ fn render_detail(frame: &mut Frame, state: &State, ui: &UiState) {
 
 fn render_picker(frame: &mut Frame, menu: &Menu, cursor: usize) {
     let area = frame.area();
-    let max_h = usize::from(area.height).saturating_sub(4).max(1);
-    let rows: Vec<(String, bool)> = if menu.loading {
-        vec![("loading…".into(), false)]
-    } else if menu.choices.is_empty() {
-        vec![("(nothing to pick)".into(), false)]
-    } else {
-        menu.choices
-            .iter()
-            .map(|c| {
-                let mark = if c.marked { menu.mark } else { " " };
-                (format!(" {mark} {} ", c.label), true)
-            })
-            .collect()
-    };
-    let visible = rows.len().min(max_h.saturating_sub(2)).max(1);
+    // Room inside the border, less the filter line if there is one.
+    let filter_h = usize::from(menu.filter.is_some());
+    let max_h = usize::from(area.height)
+        .saturating_sub(4)
+        .max(1)
+        .saturating_sub(2 + filter_h)
+        .max(1);
+    let mut rows: Vec<(String, bool)> = menu
+        .choices
+        .iter()
+        .map(|c| {
+            let mark = if c.marked { menu.mark } else { " " };
+            (format!(" {mark} {} ", c.label), true)
+        })
+        .collect();
+    if menu.loading {
+        rows.push(("loading…".into(), false));
+    } else if rows.is_empty() {
+        let filtered = menu.filter.as_deref().is_some_and(|f| !f.trim().is_empty());
+        let why = if filtered {
+            "(no matches)"
+        } else {
+            "(nothing to pick)"
+        };
+        rows.push((why.into(), false));
+    }
+    let visible = rows.len().min(max_h);
     let first = if cursor < visible {
         0
     } else {
         cursor + 1 - visible
     };
-    let hint = if menu.stays_open {
-        " Enter toggles · Esc done "
-    } else {
-        " Enter picks · Esc cancels "
+    let hint = match (menu.filter.is_some(), menu.stays_open) {
+        (true, _) => " type to filter · Enter toggles · Esc done ",
+        (false, true) => " Enter toggles · Esc done ",
+        (false, false) => " Enter picks · Esc cancels ",
     };
+    const PROMPT: &str = "› ";
     let title = format!(" {} ", menu.title);
     let w = rows
         .iter()
@@ -132,33 +145,53 @@ fn render_picker(frame: &mut Frame, menu: &Menu, cursor: usize) {
         .unwrap_or(0)
         + 4;
     let w = w.min(usize::from(area.width).saturating_sub(2));
-    let lines: Vec<Line> = rows
+    let inner_w = w.saturating_sub(2);
+    let filter_line = menu.filter.as_deref().map(|f| {
+        let shown = tail(f, inner_w.saturating_sub(width(PROMPT) + 2));
+        (
+            Line::from(vec![
+                Span::styled(format!(" {PROMPT}"), theme::KEY),
+                Span::raw(shown.to_string()),
+            ]),
+            width(PROMPT) + 1 + width(shown),
+        )
+    });
+    let choice_lines =
+        rows.into_iter()
+            .enumerate()
+            .skip(first)
+            .take(visible)
+            .map(|(i, (text, pickable))| {
+                let text = fit(&text, inner_w);
+                if !pickable {
+                    Line::styled(format!(" {text}"), theme::DIM)
+                } else if i == cursor {
+                    Line::styled(format!("{text:<inner_w$}"), theme::HEADER_FOCUS)
+                } else {
+                    Line::raw(text)
+                }
+            });
+    let cursor_x = filter_line.as_ref().map(|(_, x)| *x);
+    let lines: Vec<Line> = filter_line
+        .map(|(l, _)| l)
         .into_iter()
-        .enumerate()
-        .skip(first)
-        .take(visible)
-        .map(|(i, (text, pickable))| {
-            let text = fit(&text, w.saturating_sub(2));
-            if !pickable {
-                Line::styled(format!(" {text}"), theme::DIM)
-            } else if i == cursor {
-                Line::styled(
-                    format!("{text:<0$}", w.saturating_sub(2)),
-                    theme::HEADER_FOCUS,
-                )
-            } else {
-                Line::raw(text)
-            }
-        })
+        .chain(choice_lines)
         .collect();
     let rect = centered(area, w, lines.len() + 2);
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(theme::CARD_FOCUS)
         .title(title)
-        .title_bottom(Line::styled(hint, theme::DIM).right_aligned());
+        .title_bottom(Line::styled(fit(hint, inner_w), theme::DIM).right_aligned());
     frame.render_widget(Clear, rect);
     frame.render_widget(Paragraph::new(lines).block(block), rect);
+    if let Some(x) = cursor_x {
+        let x = (rect.x + 1).saturating_add(to_u16(x));
+        frame.set_cursor_position(Position::new(
+            x.min(rect.right().saturating_sub(2)),
+            rect.y + 1,
+        ));
+    }
 }
 
 /// Before the board arrives (or when it has no columns).

@@ -116,7 +116,7 @@ GitHub confirms it or `!` if it failed.
 | `e`             | Edit the description in your editor.                          |
 | `c`             | Write a comment in your editor.                               |
 | `s` / `p`       | Status / priority picker (priority has a "None").             |
-| `a`             | Assignee picker: each `Enter` toggles a user; `Esc` closes.   |
+| `a`             | Assignee picker, "Assign to me" first; type to filter.        |
 | `m` / `u`       | Assign me / unassign everyone.                                |
 | `x`             | Close (Completed / Not planned), or reopen a closed issue.    |
 | `<` `>` `!`     | As on the board.                                              |
@@ -128,6 +128,12 @@ GitHub confirms it or `!` if it failed.
 
 Pickers: `j`/`k` or arrows to move, `Enter` to pick, `Esc` to cancel; the
 current value is marked `●`, assigned users `✓`.
+
+In the assignee picker, typing filters the users fuzzily, as the board's `/`
+search does (`jdt` finds `@jdetter`; `me` finds "Assign to me"), so letters
+type rather than move: use the arrows or `Ctrl-n` / `Ctrl-p` to move,
+`Backspace` / `Ctrl-w` / `Ctrl-u` to widen the filter, `Enter` to toggle the
+user under the cursor, and `Esc` to close.
 
 The editor is `$VISUAL`, else `$EDITOR`, else `vi`, run on a temporary `.md`
 file. Save and quit to send; quit with an error (`:cq` in Vim) to discard. An
