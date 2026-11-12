@@ -125,6 +125,27 @@ fn o_opens_the_focused_cards_link() {
 }
 
 #[test]
+fn y_copies_the_focused_cards_link() {
+    let url = "https://github.com/acme/plans/issues/1".to_string();
+    assert_eq!(
+        on_board(ch('y')),
+        actions(vec![Action::Copy {
+            text: url.clone(),
+            what: url
+        }])
+    );
+}
+
+#[test]
+fn y_does_nothing_without_a_board() {
+    let s = step(State::new(config()), Msg::Refresh);
+    assert_eq!(
+        handle_key(&UiState::default(), &s, ch('y')).1,
+        Outcome::default()
+    );
+}
+
+#[test]
 fn o_does_nothing_without_a_board() {
     let s = step(State::new(config()), Msg::Refresh);
     assert_eq!(

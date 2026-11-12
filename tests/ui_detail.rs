@@ -158,6 +158,14 @@ fn detail_keys_send_their_messages() {
             "https://github.com/acme/plans/issues/3".into()
         )])
     );
+    let url = "https://github.com/acme/plans/issues/3".to_string();
+    assert_eq!(
+        on_detail(ch('y')),
+        actions(vec![Action::Copy {
+            text: url.clone(),
+            what: url
+        }])
+    );
 }
 
 #[test]

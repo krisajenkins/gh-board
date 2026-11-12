@@ -126,6 +126,7 @@ fn on_key<T: Transport>(
                     }
                 }
             }
+            Action::Copy { text, what } => app.ui = copied(app.ui, &text, &what, now),
             Action::OpenUrl(url) => {
                 if let Err(e) = open_url(&url) {
                     app.ui = app
@@ -162,15 +163,20 @@ fn dispatch<T: Transport>(app: App, runner: &Runner<T>, msg: Msg, now: Instant) 
 
 fn ui_effect(ui: UiState, effect: Effect, now: Instant) -> UiState {
     match effect {
-        Effect::SaveText { text, what } => match copy_to_clipboard(&text) {
-            Ok(()) => ui.notify(format!("{what} copied to the clipboard"), Level::Info, now),
-            Err(e) => ui.notify(
-                format!("{what} could not be copied to the clipboard: {e}"),
-                Level::Error,
-                now,
-            ),
-        },
+        Effect::SaveText { text, what } => copied(ui, &text, &what, now),
         other => ui.apply_effect(other, now),
+    }
+}
+
+/// Copy `text` to the clipboard and say how it went, naming it `what`.
+fn copied(ui: UiState, text: &str, what: &str, now: Instant) -> UiState {
+    match copy_to_clipboard(text) {
+        Ok(()) => ui.notify(format!("{what} copied to the clipboard"), Level::Info, now),
+        Err(e) => ui.notify(
+            format!("{what} could not be copied to the clipboard: {e}"),
+            Level::Error,
+            now,
+        ),
     }
 }
 

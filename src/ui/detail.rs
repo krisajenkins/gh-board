@@ -25,6 +25,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("< >", "move to the previous / next status"),
     ("!", "review failed changes"),
     ("o", "open in the browser"),
+    ("y", "copy the URL"),
     ("r", "reload"),
     ("F", "feedback on gh-board (title, then $EDITOR)"),
     ("?", "this help"),

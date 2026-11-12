@@ -17,6 +17,12 @@ pub enum Action {
     Quit,
     /// Open a link in the browser.
     OpenUrl(String),
+    /// Copy text to the clipboard; the shell reports how it went, naming it
+    /// `what`.
+    Copy {
+        text: String,
+        what: String,
+    },
     /// Repaint the whole screen (`Ctrl-l`).
     Redraw,
     /// Show a notice (the shell stamps the time).
@@ -64,10 +70,19 @@ pub const HELP: &[(&str, &str)] = &[
     ("R", "reload everything from GitHub"),
     ("!", "review failed changes"),
     ("o", "open the card in the browser"),
+    ("y", "copy the card's URL to the clipboard"),
     ("Enter", "card detail"),
     ("?", "this help"),
     ("q", "quit"),
 ];
+
+/// Copy a card's link, naming it by the link itself in the notice.
+fn copy_url(url: String) -> Action {
+    Action::Copy {
+        what: url.clone(),
+        text: url,
+    }
+}
 
 fn ctrl(key: &KeyEvent, c: char) -> bool {
     key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char(c)
@@ -284,6 +299,10 @@ fn detail_key(ui: UiState, state: &State, key: KeyEvent) -> (UiState, Outcome) {
     match key.code {
         KeyCode::Char('o') => match card.url {
             Some(url) => (ui, Outcome::action(Action::OpenUrl(url))),
+            None => (ui, Outcome::default()),
+        },
+        KeyCode::Char('y') => match card.url {
+            Some(url) => (ui, Outcome::action(copy_url(url))),
             None => (ui, Outcome::default()),
         },
         KeyCode::Char('m') => (ui, Outcome::msg(Msg::AssignMe { item_id })),
@@ -532,6 +551,10 @@ fn board_key(ui: UiState, state: &State, key: KeyEvent) -> (UiState, Outcome) {
         KeyCode::Char('!') => Outcome::msg(Msg::ReviewFailures),
         KeyCode::Char('o') => match board(state).focused().and_then(|c| c.url.clone()) {
             Some(url) => Outcome::action(Action::OpenUrl(url)),
+            None => Outcome::default(),
+        },
+        KeyCode::Char('y') => match board(state).focused().and_then(|c| c.url.clone()) {
+            Some(url) => Outcome::action(copy_url(url)),
             None => Outcome::default(),
         },
         KeyCode::Enter => {
