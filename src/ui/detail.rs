@@ -21,7 +21,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("a", "assignees (type to filter; Enter toggles)"),
     ("m", "assign me"),
     ("u", "unassign everyone"),
-    ("x", "close (completed / not planned) or reopen"),
+    ("x", "close (completed / not planned / duplicate) or reopen"),
     ("< >", "move to the previous / next status"),
     ("!", "review failed changes"),
     ("o", "open in the browser"),

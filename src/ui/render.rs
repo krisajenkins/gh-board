@@ -131,7 +131,8 @@ fn render_picker(frame: &mut Frame, menu: &Menu, cursor: usize) {
         cursor + 1 - visible
     };
     let hint = match (menu.filter.is_some(), menu.stays_open) {
-        (true, _) => " type to filter · Enter toggles · Esc done ",
+        (true, true) => " type to filter · Enter toggles · Esc done ",
+        (true, false) => " type to filter · Enter picks · Esc cancels ",
         (false, true) => " Enter toggles · Esc done ",
         (false, false) => " Enter picks · Esc cancels ",
     };

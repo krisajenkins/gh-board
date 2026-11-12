@@ -710,6 +710,49 @@ fn closing_defaults_to_completed() {
 }
 
 #[test]
+fn closing_as_a_duplicate_names_the_originals_issue() {
+    let (s, fx) = update(
+        loaded(),
+        Msg::CloseAsDuplicate {
+            item_id: "item1".into(),
+            original: "item2".into(),
+        },
+    );
+    let op = &mutations(&fx)[0];
+    assert_eq!(op.desc, "Close #1 as a duplicate of #2");
+    assert_eq!(
+        op.kind,
+        OpKind::State {
+            issue_state: IssueState::Closed,
+            state_reason: Some(StateReason::Duplicate),
+            duplicate_of: Some("issue2".into()),
+        }
+    );
+    assert_eq!(get(&s, 1).state, Some(IssueState::Closed));
+    assert_eq!(get(&s, 1).state_reason, Some(StateReason::Duplicate));
+}
+
+#[test]
+fn an_issue_cannot_duplicate_itself() {
+    let (s, fx) = update(
+        loaded(),
+        Msg::CloseAsDuplicate {
+            item_id: "item1".into(),
+            original: "item1".into(),
+        },
+    );
+    assert!(mutations(&fx).is_empty());
+    assert!(matches!(
+        fx.as_slice(),
+        [Effect::Notify {
+            level: Level::Warn,
+            ..
+        }]
+    ));
+    assert_eq!(get(&s, 1).state, Some(IssueState::Open));
+}
+
+#[test]
 fn an_unexpected_response_refreshes() {
     let (s, fx) = update(loaded(), priority(1, Some("p-low")));
     let op_id = mutations(&fx)[0].id;

@@ -382,7 +382,7 @@ fn x_on_an_open_issue_asks_why_it_is_closing() {
             .iter()
             .map(|c| c.label.as_str())
             .collect::<Vec<_>>(),
-        ["Completed", "Not planned"]
+        ["Completed", "Not planned", "Duplicate of…"]
     );
     let (_, s, sent, _) = press(ui, s, &[ch('j'), key(KeyCode::Enter)]);
     assert_eq!(
@@ -394,6 +394,48 @@ fn x_on_an_open_issue_asks_why_it_is_closing() {
         }]
     );
     assert_eq!(view(&s).cards[ITEM3].state, Some(IssueState::Closed));
+}
+
+#[test]
+fn duplicate_of_picks_the_original_from_the_other_issues_by_typing() {
+    let (ui, s, sent, _) = press(
+        UiState::default(),
+        detail_open(),
+        &[
+            ch('x'),
+            key(KeyCode::Down),
+            key(KeyCode::Down),
+            key(KeyCode::Enter),
+        ],
+    );
+    assert!(sent.is_empty(), "nothing sent until the original is picked");
+    let p = picker_mode(&ui);
+    assert_eq!(p.kind, PickerKind::Duplicate);
+    let labels = |s: &State, p: &Picker| {
+        menu(s, p)
+            .expect("a menu")
+            .choices
+            .iter()
+            .map(|c| c.label.clone())
+            .collect::<Vec<_>>()
+    };
+    let all = labels(&s, p);
+    assert_eq!(all.len(), 4, "every issue but this one: {all:?}");
+    assert!(all.iter().all(|l| !l.starts_with("#3 ")));
+    let (ui, s, _, _) = press(ui, s, &[ch('#'), ch('1')]);
+    assert_eq!(labels(&s, picker_mode(&ui)).len(), 1);
+    let (ui, s, sent, _) = press(ui, s, &[key(KeyCode::Enter)]);
+    assert_eq!(ui.mode, Mode::Board);
+    assert_eq!(
+        sent,
+        vec![Msg::CloseAsDuplicate {
+            item_id: ITEM3.into(),
+            original: "item1".into(),
+        }]
+    );
+    let card = &view(&s).cards[ITEM3];
+    assert_eq!(card.state, Some(IssueState::Closed));
+    assert_eq!(card.state_reason, Some(StateReason::Duplicate));
 }
 
 #[test]
@@ -834,6 +876,25 @@ fn assignee_picker_with_no_matches() {
     let t = draw(&s, &ui);
     assert!(find_row(&t, "(no matches)").is_some());
     assert_snapshot!(t.backend());
+}
+
+#[test]
+fn duplicate_picker() {
+    let (ui, s, _, _) = press(
+        UiState::default(),
+        detail_open(),
+        &[
+            ch('x'),
+            ch('G'),
+            key(KeyCode::Enter),
+            ch('c'),
+            ch('a'),
+            ch('r'),
+        ],
+    );
+    let t = draw(&s, &ui);
+    assert!(find_row(&t, "› car").is_some());
+    assert_snapshot!(draw(&s, &ui).backend());
 }
 
 #[test]

@@ -103,6 +103,7 @@ fn close_and_reopen_responses_decode_to_issue_fields() {
     let state = OpKind::State {
         issue_state: IssueState::Closed,
         state_reason: None,
+        duplicate_of: None,
     };
     let closed = Card {
         state: Some(IssueState::Closed),

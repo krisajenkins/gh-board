@@ -112,6 +112,11 @@ pub enum Msg {
         issue_state: IssueState,
         reason: Option<StateReason>,
     },
+    /// Close an issue as a duplicate of another card's issue.
+    CloseAsDuplicate {
+        item_id: ItemId,
+        original: ItemId,
+    },
     ItemLoaded {
         rev: u64,
         card: Card,
@@ -302,6 +307,9 @@ fn handle(s: &mut State, msg: Msg, fx: &mut Fx) {
             issue_state,
             reason,
         } => set_state(s, fx, &item_id, issue_state, reason),
+        Msg::CloseAsDuplicate { item_id, original } => {
+            close_as_duplicate(s, fx, &item_id, &original)
+        }
         Msg::ItemLoaded { rev, card } => item_loaded(s, fx, rev, card),
         Msg::Comment { item_id, body } => comment(s, fx, &item_id, &body),
         Msg::SetBody { item_id, body } => set_body(s, fx, &item_id, &body),
@@ -839,6 +847,48 @@ fn set_state(
             OpKind::State {
                 issue_state,
                 state_reason: reason,
+                duplicate_of: None,
+            },
+        ),
+    );
+}
+
+/// Close an issue as a duplicate of another card's issue.
+fn close_as_duplicate(s: &mut State, fx: &mut Fx, item_id: &str, original: &str) {
+    if item_id == original {
+        notify(fx, Level::Warn, "An issue cannot duplicate itself".into());
+        return;
+    }
+    let Some(card) = actionable(s, fx, Some(item_id)) else {
+        return;
+    };
+    let Some(orig) = actionable(s, fx, Some(original)) else {
+        return;
+    };
+    let Some(original_issue) = orig.issue_id.clone() else {
+        notify(fx, Level::Warn, format!("{} is not an issue", orig.label()));
+        return;
+    };
+    if card.state == Some(IssueState::Closed) {
+        notify(
+            fx,
+            Level::Info,
+            format!("{} is already closed", card.label()),
+        );
+        return;
+    }
+    let desc = format!("Close {} as a duplicate of {}", card.label(), orig.label());
+    enqueue(
+        s,
+        fx,
+        Op::new(
+            card.item_id,
+            card.issue_id,
+            desc,
+            OpKind::State {
+                issue_state: IssueState::Closed,
+                state_reason: Some(StateReason::Duplicate),
+                duplicate_of: Some(original_issue),
             },
         ),
     );

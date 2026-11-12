@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use common::*;
 use gh_board::model::{OpKind, OpState, State, board, view};
-use gh_board::types::{Card, ItemId, User};
+use gh_board::types::{Card, IssueState, ItemId, StateReason, User};
 use gh_board::update::{Direction, Effect, Msg, MutationResult, Towards, update};
 use proptest::prelude::*;
 
@@ -22,6 +22,8 @@ enum Action {
     SetPriority(u64, Option<usize>),
     SetStatus(u64, usize),
     ToggleAssignee(u64, usize),
+    /// Reopen (`None`), or close for `CLOSE_AS[i]`.
+    SetState(u64, Option<usize>),
     Focus(Direction),
     FilterKey(usize),
     Move(Towards),
@@ -40,8 +42,20 @@ fn intent() -> impl Strategy<Value = Action> {
         (card.clone(), prop::option::of(0..PRIORITIES.len()))
             .prop_map(|(c, p)| Action::SetPriority(c, p)),
         (card.clone(), 0..STATUSES.len()).prop_map(|(c, s)| Action::SetStatus(c, s)),
-        (card, 0..3usize).prop_map(|(c, u)| Action::ToggleAssignee(c, u)),
+        (card.clone(), 0..3usize).prop_map(|(c, u)| Action::ToggleAssignee(c, u)),
+        (card, prop::option::of(0..CLOSE_AS.len())).prop_map(|(c, r)| Action::SetState(c, r)),
     ]
+}
+
+/// The ways to close; a duplicate is of the next card along.
+const CLOSE_AS: [StateReason; 3] = [
+    StateReason::Completed,
+    StateReason::NotPlanned,
+    StateReason::Duplicate,
+];
+
+fn original_of(n: u64) -> u64 {
+    n % CARDS + 1
 }
 
 fn browse() -> impl Strategy<Value = Action> {
@@ -157,6 +171,22 @@ impl Sim {
                     }
                 }
             }
+            OpKind::State {
+                issue_state,
+                state_reason,
+                duplicate_of,
+            } => {
+                prop_assert_eq!(
+                    duplicate_of.is_some(),
+                    *state_reason == Some(StateReason::Duplicate),
+                    "a duplicate names its original, and only a duplicate does"
+                );
+                card.state = Some(*issue_state);
+                card.state_reason = match issue_state {
+                    IssueState::Closed => *state_reason,
+                    IssueState::Open => Some(StateReason::Reopened),
+                };
+            }
             other => panic!("not simulated: {other:?}"),
         }
         let result = Ok(MutationResult::Card(card.clone()));
@@ -181,6 +211,22 @@ impl Sim {
                 item_id: item(*n),
                 user: users()[*u].clone(),
             }),
+            Action::SetState(n, None) => self.send(Msg::SetState {
+                item_id: item(*n),
+                issue_state: IssueState::Open,
+                reason: None,
+            }),
+            Action::SetState(n, Some(i)) => match CLOSE_AS[*i] {
+                StateReason::Duplicate => self.send(Msg::CloseAsDuplicate {
+                    item_id: item(*n),
+                    original: item(original_of(*n)),
+                }),
+                reason => self.send(Msg::SetState {
+                    item_id: item(*n),
+                    issue_state: IssueState::Closed,
+                    reason: Some(reason),
+                }),
+            },
             Action::Focus(d) => self.send(Msg::Focus(*d)),
             Action::FilterKey(k) => self.send(Msg::FilterKey(*k)),
             Action::Move(t) => self.send(Msg::MoveCard(*t)),
@@ -266,12 +312,22 @@ impl Sim {
     }
 }
 
+type Essence = (
+    Option<String>,
+    Option<String>,
+    Vec<String>,
+    Option<IssueState>,
+    Option<StateReason>,
+);
+
 /// What a card looks like to the user, minus the pending/failed marks.
-fn essence(c: &Card) -> (Option<String>, Option<String>, Vec<String>) {
+fn essence(c: &Card) -> Essence {
     (
         c.status_id.clone(),
         c.priority_id.clone(),
         c.assignees.iter().map(|u| u.login.clone()).collect(),
+        c.state,
+        c.state_reason,
     )
 }
 
@@ -312,6 +368,23 @@ proptest! {
                         card.assignees.retain(|x| x != user);
                     } else {
                         card.assignees.push(user.clone());
+                    }
+                }
+                Action::SetState(n, r) => {
+                    let card = intent.get_mut(&format!("item{n}")).unwrap();
+                    let closed = card.state == Some(IssueState::Closed);
+                    match r.map(|i| CLOSE_AS[i]) {
+                        None if !closed => {}
+                        None => {
+                            card.state = Some(IssueState::Open);
+                            card.state_reason = Some(StateReason::Reopened);
+                        }
+                        // Only an open issue can be closed as a duplicate.
+                        Some(StateReason::Duplicate) if closed => {}
+                        Some(reason) => {
+                            card.state = Some(IssueState::Closed);
+                            card.state_reason = Some(reason);
+                        }
                     }
                 }
                 _ => {}

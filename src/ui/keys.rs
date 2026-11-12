@@ -7,7 +7,7 @@ use crate::model::{State, board, op_counts};
 use crate::types::IssueState;
 use crate::ui::detail;
 use crate::ui::editor::{Edit, EditKind};
-use crate::ui::picker::{Picker, PickerKind, initial_cursor, menu};
+use crate::ui::picker::{Pick, Picker, PickerKind, initial_cursor, menu};
 use crate::ui::state::{Mode, UiState};
 use crate::update::{Direction, Level, Msg, Towards};
 
@@ -207,12 +207,24 @@ fn picker_key(ui: UiState, state: &State, picker: Picker, key: KeyEvent) -> (UiS
         return close();
     }
     if key.code == KeyCode::Enter {
-        return match m.choices.get(cursor) {
-            Some(choice) if m.stays_open => (
-                with_mode(ui, Mode::Picker(Picker { cursor, ..picker })),
-                Outcome::msg(choice.msg.clone()),
+        return match m.choices.get(cursor).map(|c| &c.pick) {
+            Some(Pick::Open(kind)) => (
+                with_mode(
+                    ui,
+                    Mode::Picker(Picker {
+                        kind: *kind,
+                        cursor: initial_cursor(state, *kind, &picker.item_id),
+                        filter: String::new(),
+                        ..picker
+                    }),
+                ),
+                Outcome::default(),
             ),
-            Some(choice) => (with_mode(ui, Mode::Board), Outcome::msg(choice.msg.clone())),
+            Some(Pick::Send(msg)) if m.stays_open => (
+                with_mode(ui, Mode::Picker(Picker { cursor, ..picker })),
+                Outcome::msg(msg.clone()),
+            ),
+            Some(Pick::Send(msg)) => (with_mode(ui, Mode::Board), Outcome::msg(msg.clone())),
             None => (ui, Outcome::default()),
         };
     }

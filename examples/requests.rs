@@ -23,9 +23,21 @@ fn main() {
         ),
         (
             "close",
-            queries::set_state(ID, IssueState::Closed, Some(StateReason::NotPlanned)),
+            queries::set_state(ID, IssueState::Closed, Some(StateReason::NotPlanned), None),
         ),
-        ("reopen", queries::set_state(ID, IssueState::Open, None)),
+        (
+            "close_duplicate",
+            queries::set_state(
+                ID,
+                IssueState::Closed,
+                Some(StateReason::Duplicate),
+                Some(ID),
+            ),
+        ),
+        (
+            "reopen",
+            queries::set_state(ID, IssueState::Open, None, None),
+        ),
         ("set_priority", queries::set_priority(ID, ID, Some("opt"))),
         ("clear_priority", queries::set_priority(ID, ID, None)),
         ("assign_add", queries::set_assignees(ID, &[ID], &[])),

@@ -118,7 +118,7 @@ GitHub confirms it or `!` if it failed.
 | `s` / `p`       | Status / priority picker (priority has a "None").             |
 | `a`             | Assignee picker, "Assign to me" first; type to filter.        |
 | `m` / `u`       | Assign me / unassign everyone.                                |
-| `x`             | Close (Completed / Not planned), or reopen a closed issue.    |
+| `x`             | Close (Completed / Not planned / Duplicate of…), or reopen a closed issue. |
 | `<` `>` `!`     | As on the board.                                              |
 | `o`             | Open in the browser.                                          |
 | `y`             | Copy the URL to the clipboard.                                |
@@ -134,6 +134,11 @@ search does (`jdt` finds `@jdetter`; `me` finds "Assign to me"), so letters
 type rather than move: use the arrows or `Ctrl-n` / `Ctrl-p` to move,
 `Backspace` / `Ctrl-w` / `Ctrl-u` to widen the filter, `Enter` to toggle the
 user under the cursor, and `Esc` to close.
+
+"Duplicate of…" in the close picker opens a second picker listing the
+board's other issues (hidden columns included), filtered by typing as the `/`
+search is (`#12`, or words from the title); `Enter` closes the issue as a
+duplicate of the one under the cursor. The original must be on the board.
 
 The editor is `$VISUAL`, else `$EDITOR`, else `vi`, run on a temporary `.md`
 file. Save and quit to send; quit with an error (`:cq` in Vim) to discard. An

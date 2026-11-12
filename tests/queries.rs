@@ -90,15 +90,30 @@ fn create_sets_priority_only_when_there_is_one() {
 
 #[test]
 fn set_state_closes_with_a_reason_or_reopens() {
-    let close = queries::set_state("I", IssueState::Closed, Some(StateReason::NotPlanned));
+    let close = queries::set_state("I", IssueState::Closed, Some(StateReason::NotPlanned), None);
     assert_eq!(
         close.variables,
         json!({ "issueId": "I", "reason": "NOT_PLANNED" })
     );
     assert!(close.query.contains("closeIssue"));
-    let reopen = queries::set_state("I", IssueState::Open, None);
+    let reopen = queries::set_state("I", IssueState::Open, None, None);
     assert_eq!(reopen.variables, json!({ "issueId": "I" }));
     assert!(reopen.query.contains("reopenIssue"));
+}
+
+#[test]
+fn closing_as_a_duplicate_names_the_original() {
+    let close = queries::set_state(
+        "I",
+        IssueState::Closed,
+        Some(StateReason::Duplicate),
+        Some("I_orig"),
+    );
+    assert_eq!(
+        close.variables,
+        json!({ "issueId": "I", "reason": "DUPLICATE", "duplicateOf": "I_orig" })
+    );
+    assert!(close.query.contains("duplicateIssueId: $duplicateOf"));
 }
 
 #[test]

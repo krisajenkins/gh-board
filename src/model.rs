@@ -43,6 +43,8 @@ pub enum OpKind {
         issue_state: IssueState,
         /// Set when closing.
         state_reason: Option<StateReason>,
+        /// The original's issue id, when closing as a duplicate.
+        duplicate_of: Option<String>,
     },
     Create {
         title: String,
@@ -230,6 +232,7 @@ fn apply(card: &mut Card, op: &Op) {
         OpKind::State {
             issue_state,
             state_reason,
+            ..
         } => {
             card.state = Some(*issue_state);
             card.state_reason = match issue_state {

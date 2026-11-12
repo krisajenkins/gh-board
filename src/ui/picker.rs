@@ -5,6 +5,9 @@
 //!
 //! The assignee picker can be filtered by typing, fuzzily as in the board's
 //! search (`jdt` finds `@jdetter`), and offers "Assign to me" first.
+//!
+//! The close picker's "Duplicate of…" opens the duplicate picker: every other
+//! issue on the board, filtered by typing as the board's `/` search is.
 
 use crate::model::{State, view};
 use crate::search;
@@ -15,10 +18,12 @@ use crate::update::Msg;
 pub enum PickerKind {
     Status,
     Priority,
-    /// Close an open issue as completed or not planned.
+    /// Close an open issue as completed, not planned, or a duplicate.
     Close,
     /// Toggle assignees; stays open until dismissed.
     Assignee,
+    /// Pick the issue an issue duplicates, from the board's other issues.
+    Duplicate,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -27,7 +32,7 @@ pub struct Picker {
     pub item_id: ItemId,
     /// An index into the menu's (filtered) choices.
     pub cursor: usize,
-    /// What has been typed to narrow the choices (assignee picker only).
+    /// What has been typed to narrow the choices (filterable pickers only).
     pub filter: String,
 }
 
@@ -36,7 +41,18 @@ pub struct Choice {
     pub label: String,
     /// The current value (`●`), or an assigned user (`✓`).
     pub marked: bool,
-    pub msg: Msg,
+    pub pick: Pick,
+}
+
+/// What picking a choice does.
+// Choices are built per frame and were always this size: boxing the Msg buys
+// nothing.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Pick {
+    Send(Msg),
+    /// Open another picker on the same card.
+    Open(PickerKind),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,10 +96,10 @@ pub fn menu(state: &State, picker: &Picker) -> Option<Menu> {
                 .map(|o| Choice {
                     label: o.name.clone(),
                     marked: card.status_id.as_deref() == Some(&o.id),
-                    msg: Msg::SetStatus {
+                    pick: Pick::Send(Msg::SetStatus {
                         item_id: item_id.clone(),
                         status_id: o.id.clone(),
-                    },
+                    }),
                 })
                 .collect(),
         ),
@@ -98,25 +114,24 @@ pub fn menu(state: &State, picker: &Picker) -> Option<Menu> {
                 .map(|o| Choice {
                     label: o.name.clone(),
                     marked: card.priority_id.as_deref() == Some(&o.id),
-                    msg: Msg::SetPriority {
+                    pick: Pick::Send(Msg::SetPriority {
                         item_id: item_id.clone(),
                         priority_id: Some(o.id.clone()),
-                    },
+                    }),
                 })
                 .collect();
             choices.push(Choice {
                 label: "None".into(),
                 marked: card.priority_id.is_none(),
-                msg: Msg::SetPriority {
+                pick: Pick::Send(Msg::SetPriority {
                     item_id: item_id.clone(),
                     priority_id: None,
-                },
+                }),
             });
             simple(format!("Priority for {}", label(&card)), choices)
         }
-        PickerKind::Close => simple(
-            format!("Close {} as", label(&card)),
-            [
+        PickerKind::Close => {
+            let mut choices: Vec<Choice> = [
                 ("Completed", StateReason::Completed),
                 ("Not planned", StateReason::NotPlanned),
             ]
@@ -124,14 +139,55 @@ pub fn menu(state: &State, picker: &Picker) -> Option<Menu> {
             .map(|(name, reason)| Choice {
                 label: name.into(),
                 marked: card.state == Some(IssueState::Closed) && card.state_reason == Some(reason),
-                msg: Msg::SetState {
+                pick: Pick::Send(Msg::SetState {
                     item_id: item_id.clone(),
                     issue_state: IssueState::Closed,
                     reason: Some(reason),
-                },
+                }),
             })
-            .collect(),
-        ),
+            .collect();
+            choices.push(Choice {
+                label: "Duplicate of…".into(),
+                marked: card.state == Some(IssueState::Closed)
+                    && card.state_reason == Some(StateReason::Duplicate),
+                pick: Pick::Open(PickerKind::Duplicate),
+            });
+            simple(format!("Close {} as", label(&card)), choices)
+        }
+        PickerKind::Duplicate => {
+            let pf = meta.priority_field.as_ref();
+            let terms = search::parse(&picker.filter);
+            let mut others: Vec<Card> = view(state)
+                .cards
+                .into_values()
+                .filter(|c| c.item_id != item_id && c.issue_id.is_some() && !c.temp)
+                .filter(|c| {
+                    let priority = pf
+                        .zip(c.priority_id.as_deref())
+                        .and_then(|(f, id)| f.option_name(id));
+                    search::matches(&terms, &search::fields(c, priority))
+                })
+                .collect();
+            others.sort_by_key(|c| c.number);
+            Menu {
+                title: format!("Close {} as a duplicate of", label(&card)),
+                choices: others
+                    .into_iter()
+                    .map(|c| Choice {
+                        label: format!("{} {}", label(&c), c.title),
+                        marked: false,
+                        pick: Pick::Send(Msg::CloseAsDuplicate {
+                            item_id: item_id.clone(),
+                            original: c.item_id,
+                        }),
+                    })
+                    .collect(),
+                mark: "●",
+                loading: false,
+                stays_open: false,
+                filter: Some(picker.filter.clone()),
+            }
+        }
         PickerKind::Assignee => {
             let viewer = &meta.viewer;
             let users = card.repo_id.as_ref().and_then(|r| state.assignable.get(r));
@@ -146,7 +202,7 @@ pub fn menu(state: &State, picker: &Picker) -> Option<Menu> {
                 Choice {
                     label: format!("Assign to me (@{})", viewer.login),
                     marked: card.is_assigned(&viewer.id),
-                    msg: toggle(viewer),
+                    pick: Pick::Send(toggle(viewer)),
                 },
             );
             let others = users
@@ -162,7 +218,7 @@ pub fn menu(state: &State, picker: &Picker) -> Option<Menu> {
                                 None => format!("@{}", u.login),
                             },
                             marked: card.is_assigned(&u.id),
-                            msg: toggle(u),
+                            pick: Pick::Send(toggle(u)),
                         },
                     )
                 });
@@ -204,7 +260,7 @@ pub fn initial_cursor(state: &State, kind: PickerKind, item_id: &str) -> usize {
         PickerKind::Status | PickerKind::Priority => menu(state, &probe)
             .and_then(|m| m.choices.iter().position(|c| c.marked))
             .unwrap_or(0),
-        PickerKind::Close | PickerKind::Assignee => 0,
+        PickerKind::Close | PickerKind::Assignee | PickerKind::Duplicate => 0,
     }
 }
 

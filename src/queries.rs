@@ -193,8 +193,10 @@ pub fn item(item_id: &str, status_field: &str) -> Request {
 }
 
 const CLOSE: &str = r#"
-mutation($issueId: ID!, $reason: IssueClosedStateReason) {
-  closeIssue(input: { issueId: $issueId, stateReason: $reason }) { issue { ...CardIssue } }
+mutation($issueId: ID!, $reason: IssueClosedStateReason, $duplicateOf: ID) {
+  closeIssue(input: { issueId: $issueId, stateReason: $reason, duplicateIssueId: $duplicateOf }) {
+    issue { ...CardIssue }
+  }
 }
 "#;
 
@@ -204,24 +206,33 @@ mutation($issueId: ID!) {
 }
 "#;
 
-/// GraphQL's name for a close reason. Only these two are offered:
-/// `DUPLICATE` needs a duplicate issue id.
+/// GraphQL's name for a close reason. `REOPENED` is not one.
 fn reason_name(r: StateReason) -> Option<&'static str> {
     match r {
         StateReason::Completed => Some("COMPLETED"),
         StateReason::NotPlanned => Some("NOT_PLANNED"),
-        StateReason::Duplicate | StateReason::Reopened => None,
+        StateReason::Duplicate => Some("DUPLICATE"),
+        StateReason::Reopened => None,
     }
 }
 
-/// Close an issue, with a reason, or reopen it.
-pub fn set_state(issue_id: &str, issue_state: IssueState, reason: Option<StateReason>) -> Request {
+/// Close an issue, with a reason, or reopen it. Closing as a duplicate names
+/// the original by its issue id.
+pub fn set_state(
+    issue_id: &str,
+    issue_state: IssueState,
+    reason: Option<StateReason>,
+    duplicate_of: Option<&str>,
+) -> Request {
     match issue_state {
         IssueState::Open => request(with_issue(REOPEN), json!({ "issueId": issue_id })),
-        IssueState::Closed => request(
-            with_issue(CLOSE),
-            json!({ "issueId": issue_id, "reason": reason.and_then(reason_name) }),
-        ),
+        IssueState::Closed => {
+            let mut vars = json!({ "issueId": issue_id, "reason": reason.and_then(reason_name) });
+            if let Some(original) = duplicate_of {
+                vars["duplicateOf"] = json!(original);
+            }
+            request(with_issue(CLOSE), vars)
+        }
     }
 }
 
@@ -409,7 +420,13 @@ pub fn for_op(op: &Op, meta: &Meta, config: &Config) -> Result<Request, String> 
         OpKind::State {
             issue_state,
             state_reason,
-        } => set_state(issue_id()?, *issue_state, *state_reason),
+            duplicate_of,
+        } => set_state(
+            issue_id()?,
+            *issue_state,
+            *state_reason,
+            duplicate_of.as_deref(),
+        ),
         OpKind::Body { body } => set_body(issue_id()?, body),
         OpKind::Comment { body } => comment(issue_id()?, body),
         OpKind::Create { .. } => return Err("a create is several requests".into()),
