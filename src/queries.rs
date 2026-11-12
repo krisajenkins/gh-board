@@ -83,7 +83,7 @@ query($owner: String!, $number: Int!, $statusField: String!, $after: String) {
     projectV2(number: $number) {
       id title
       field(name: $statusField) { ... on ProjectV2SingleSelectField { id options { id name } } }
-      items(first: 100, after: $after) {
+      items(first: 100, after: $after, query: "is:issue") {
         pageInfo { hasNextPage endCursor }
         nodes { ...CardItem }
       }
