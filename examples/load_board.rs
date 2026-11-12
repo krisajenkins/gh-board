@@ -19,12 +19,22 @@ fn main() {
     };
     let config = Config::new(owner, project.parse().expect("a project number"));
     let started = Instant::now();
+    let mut first_page = None;
     let (mut s, mut effects) = update(State::new(config.clone()), Msg::Refresh);
     // Run only the board fetch; skip the assignable-user prefetches it triggers.
     while let Some(effect) = effects.pop() {
         if let Effect::FetchBoard { .. } = effect {
             let mut msgs = vec![];
-            perform(&Gh::default(), &config, effect, |_| {}, |m| msgs.push(m));
+            perform(
+                &Gh::default(),
+                &config,
+                effect,
+                |_| {},
+                |m| {
+                    first_page.get_or_insert_with(|| started.elapsed());
+                    msgs.push(m);
+                },
+            );
             for m in msgs {
                 let (next, fx) = update(s, m);
                 s = next;
@@ -43,9 +53,10 @@ fn main() {
     }
     let meta = s.meta.as_ref().expect("loaded");
     println!(
-        "loaded {} cards in {:.1?}",
+        "loaded {} cards in {:.1?} (first page in {:.1?})",
         s.base.cards.len(),
-        started.elapsed()
+        started.elapsed(),
+        first_page.unwrap_or_default()
     );
     println!(
         "priority field: {}",

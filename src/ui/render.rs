@@ -425,7 +425,11 @@ pub fn status_segments(state: &State) -> (Segments, Segments) {
     }
     let mut right = Vec::new();
     if state.loading {
-        right.push(("loading… ".into(), theme::PENDING));
+        let so_far = match &state.incoming {
+            Some(cards) => format!("loading… {} cards so far ", cards.cards.len()),
+            None => "loading… ".into(),
+        };
+        right.push((so_far, theme::PENDING));
     }
     if let Some(e) = &state.error {
         right.push((format!("{} ", e.replace('\n', " ")), theme::FAILED));

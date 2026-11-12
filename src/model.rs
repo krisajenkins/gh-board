@@ -164,6 +164,9 @@ pub struct State {
     pub meta: Option<Meta>,
     /// Last server truth.
     pub base: Cards,
+    /// The cards the board fetch in flight has read so far, in order; `None`
+    /// until its first page arrives.
+    pub incoming: Option<Cards>,
     /// Unconfirmed changes, oldest first. Ids ascend.
     pub ops: Vec<Op>,
     pub next_op: u64,
@@ -195,6 +198,7 @@ impl State {
             refresh_from: 0,
             meta: None,
             base: Cards::default(),
+            incoming: None,
             ops: Vec::new(),
             next_op: 1,
             filter: Filter::All,

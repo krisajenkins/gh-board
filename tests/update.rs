@@ -116,6 +116,181 @@ fn a_stale_board_response_is_ignored() {
     assert!(s.loading);
 }
 
+fn page(list: impl IntoIterator<Item = Card>) -> Board {
+    Board {
+        meta: meta(),
+        cards: cards(list),
+    }
+}
+
+fn order(s: &State) -> Vec<&str> {
+    s.base.order.iter().map(String::as_str).collect()
+}
+
+fn item(n: u64) -> Card {
+    items().cards[&format!("item{n}")].clone()
+}
+
+#[test]
+fn a_board_is_shown_page_by_page_as_it_loads() {
+    let s = step(State::new(config()), Msg::Refresh);
+    let seq = s.seq;
+    let s = step(
+        s,
+        Msg::BoardPage {
+            seq,
+            board: page([item(1), item(2)]),
+        },
+    );
+    assert!(s.loading);
+    assert!(s.meta.is_some());
+    assert_eq!(shape(&s)[0], row("Todo", &[1, 2]));
+    let s = step(
+        s,
+        Msg::BoardLoaded {
+            seq,
+            board: page([item(3), item(4), item(5)]),
+        },
+    );
+    assert!(!s.loading);
+    assert_eq!(s.incoming, None);
+    assert_eq!(s, loaded());
+}
+
+#[test]
+fn a_refresh_keeps_the_old_board_until_its_last_page_replaces_it() {
+    let s = step(loaded(), Msg::Refresh);
+    let seq = s.seq;
+    let moved = Card {
+        status_id: Some("s-prog".into()),
+        ..item(2)
+    };
+    let s = step(
+        s,
+        Msg::BoardPage {
+            seq,
+            board: page([moved.clone(), item(1)]),
+        },
+    );
+    // Read cards first, in GitHub's new order; then the old ones not reached.
+    assert_eq!(order(&s), ["item2", "item1", "item3", "item4", "item5"]);
+    assert_eq!(get(&s, 2), moved);
+    let s = step(
+        s,
+        Msg::BoardLoaded {
+            seq,
+            board: page([item(4)]),
+        },
+    );
+    // 3 and 5 have left the project.
+    assert_eq!(order(&s), ["item2", "item1", "item4"]);
+}
+
+#[test]
+fn a_board_with_a_bad_filter_warns_once_per_load_not_per_page() {
+    let mut config = config();
+    config.priority = Some("Whenever".into());
+    let s = step(State::new(config), Msg::Refresh);
+    let seq = s.seq;
+    let mut warnings = 0;
+    let mut s = s;
+    for msg in [
+        Msg::BoardPage {
+            seq,
+            board: page([item(1)]),
+        },
+        Msg::BoardPage {
+            seq,
+            board: page([item(2)]),
+        },
+        Msg::BoardLoaded {
+            seq,
+            board: page([item(3)]),
+        },
+    ] {
+        let (next, fx) = update(s, msg);
+        s = next;
+        warnings += fx
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    Effect::Notify {
+                        level: Level::Warn,
+                        ..
+                    }
+                )
+            })
+            .count();
+    }
+    assert_eq!(warnings, 1);
+}
+
+#[test]
+fn a_load_failing_part_way_keeps_the_pages_it_read() {
+    let s = step(State::new(config()), Msg::Refresh);
+    let seq = s.seq;
+    let s = step(
+        s,
+        Msg::BoardPage {
+            seq,
+            board: page([item(1)]),
+        },
+    );
+    let s = step(
+        s,
+        Msg::BoardFailed {
+            seq,
+            err: "rate limited".into(),
+        },
+    );
+    assert!(!s.loading);
+    assert_eq!(s.incoming, None);
+    assert_eq!(s.error.as_deref(), Some("rate limited"));
+    assert_eq!(order(&s), ["item1"]);
+}
+
+#[test]
+fn an_item_reread_during_a_load_is_not_undone_by_its_later_pages() {
+    let s = step(loaded(), Msg::Refresh);
+    let seq = s.seq;
+    let s = step(
+        s,
+        Msg::BoardPage {
+            seq,
+            board: page([item(1), item(2)]),
+        },
+    );
+    let reread = Card {
+        status_id: Some("s-done".into()),
+        ..item(1)
+    };
+    let rev = s.confirms;
+    let s = step(
+        s,
+        Msg::ItemLoaded {
+            rev,
+            card: reread.clone(),
+        },
+    );
+    let s = step(
+        s,
+        Msg::BoardPage {
+            seq,
+            board: page([item(3)]),
+        },
+    );
+    assert_eq!(get(&s, 1), reread);
+    let s = step(
+        s,
+        Msg::BoardLoaded {
+            seq,
+            board: page([item(4), item(5)]),
+        },
+    );
+    assert_eq!(get(&s, 1), reread);
+}
+
 #[test]
 fn the_configured_priority_becomes_the_starting_filter() {
     let mut config = config();

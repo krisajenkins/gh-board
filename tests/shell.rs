@@ -168,19 +168,46 @@ fn item_json(card: &Card) -> Value {
 }
 
 #[test]
-fn the_board_is_fetched_page_by_page_and_decoded_as_one() {
+fn the_board_is_fetched_and_sent_page_by_page() {
     let all: Vec<Card> = items().iter().cloned().collect();
     let page =
         |cards: &[Card], cursor| gh::page(&meta(), cards.iter().map(item_json).collect(), cursor);
     let gh = Fake::new([Ok(page(&all[..2], Some("c1"))), Ok(page(&all[2..], None))]);
     let msgs = run(&gh, Effect::FetchBoard { seq: 3 });
-    let [Msg::BoardLoaded { seq: 3, board }] = &msgs[..] else {
+    let [
+        Msg::BoardPage {
+            seq: 3,
+            board: first,
+        },
+        Msg::BoardLoaded {
+            seq: 3,
+            board: last,
+        },
+    ] = &msgs[..]
+    else {
         panic!("{msgs:?}")
     };
-    assert_eq!(board.cards, items());
+    assert_eq!(first.cards, cards(all[..2].to_vec()));
+    assert_eq!(last.cards, cards(all[2..].to_vec()));
     let seen = gh.seen.lock().unwrap();
     assert_eq!(seen[0].variables.get("after"), None);
     assert_eq!(seen[1].variables["after"], "c1");
+}
+
+#[test]
+fn a_board_failing_part_way_sends_the_pages_it_read_then_the_failure() {
+    let all: Vec<Card> = items().iter().cloned().collect();
+    let first = gh::page(
+        &meta(),
+        all[..2].iter().map(item_json).collect(),
+        Some("c1"),
+    );
+    let gh = Fake::new([Ok(first), Err("rate limited".into())]);
+    let msgs = run(&gh, Effect::FetchBoard { seq: 1 });
+    assert!(
+        matches!(&msgs[..], [Msg::BoardPage { seq: 1, .. }, Msg::BoardFailed { seq: 1, err }] if err == "rate limited"),
+        "{msgs:?}"
+    );
 }
 
 #[test]

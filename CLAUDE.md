@@ -90,6 +90,10 @@ Conventions:
   sends `BoardLoaded { board }`, `OpOk { result: Result<MutationResult, _> }`
   and so on. A decode failure becomes the corresponding `*Failed` message (or
   `OpOk` with `Err`, meaning "GitHub accepted it but the response was wrong").
+- **The board arrives a page at a time**: `BoardPage`s, then `BoardLoaded`
+  for the last. The reducer stages them in `State::incoming` and shows the
+  pages read so far followed by the old cards not yet reached, so a first
+  load fills in and a refresh never blanks; the last page drops the rest.
 - Indexes are 0-based; "nothing there" is `Option`, not 0.
 - `update` takes `State` by value and handlers mutate it in place: callers
   that need the old state clone it.

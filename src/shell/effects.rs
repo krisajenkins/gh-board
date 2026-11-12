@@ -79,10 +79,11 @@ pub fn perform(
     mut dispatch: impl FnMut(Msg),
 ) {
     match effect {
-        Effect::FetchBoard { seq } => dispatch(match fetch_board(gh, config) {
-            Ok(board) => Msg::BoardLoaded { seq, board },
-            Err(err) => Msg::BoardFailed { seq, err },
-        }),
+        Effect::FetchBoard { seq } => {
+            if let Err(err) = fetch_board(gh, config, seq, &mut dispatch) {
+                dispatch(Msg::BoardFailed { seq, err });
+            }
+        }
         Effect::FetchAssignable { repo_id, repo } => {
             let users = gh
                 .graphql(&queries::assignable(&repo))
@@ -136,19 +137,25 @@ fn send_feedback(gh: &impl Transport, title: &str, body: &str) -> Result<Option<
     Ok(url)
 }
 
-/// Every page of the board, decoded as one.
-fn fetch_board(gh: &impl Transport, config: &Config) -> Result<crate::types::Board, String> {
-    let mut pages: Vec<Value> = Vec::new();
+/// Every page of the board, each sent as it arrives: `BoardPage`s, then
+/// `BoardLoaded` for the last.
+fn fetch_board(
+    gh: &impl Transport,
+    config: &Config,
+    seq: u64,
+    dispatch: &mut impl FnMut(Msg),
+) -> Result<(), String> {
     let mut after: Option<String> = None;
     loop {
         let data = gh.graphql(&queries::board(config, after.as_deref()))?;
         after = queries::next_cursor(&data);
-        pages.push(data);
+        let (board, _skipped) = decode::board(std::slice::from_ref(&data), config)?;
         if after.is_none() {
-            break;
+            dispatch(Msg::BoardLoaded { seq, board });
+            return Ok(());
         }
+        dispatch(Msg::BoardPage { seq, board });
     }
-    decode::board(&pages, config).map(|(board, _skipped)| board)
 }
 
 fn mutate(

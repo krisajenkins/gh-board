@@ -54,6 +54,12 @@ pub enum MutationResult {
 pub enum Msg {
     // Loading
     Refresh,
+    /// A page of the board, with more to come.
+    BoardPage {
+        seq: u64,
+        board: Board,
+    },
+    /// The board's last page.
     BoardLoaded {
         seq: u64,
         board: Board,
@@ -234,10 +240,13 @@ pub fn update(mut s: State, msg: Msg) -> (State, Vec<Effect>) {
 fn handle(s: &mut State, msg: Msg, fx: &mut Fx) {
     match msg {
         Msg::Refresh => refresh(s, fx),
-        Msg::BoardLoaded { seq, board } => board_loaded(s, fx, seq, board),
+        Msg::BoardPage { seq, board } => board_page(s, fx, seq, board, false),
+        Msg::BoardLoaded { seq, board } => board_page(s, fx, seq, board, true),
         Msg::BoardFailed { seq, err } => {
             if seq == s.seq {
+                // The pages read so far stay: they are server truth too.
                 s.loading = false;
+                s.incoming = None;
                 notify(fx, Level::Error, format!("Loading the board failed: {err}"));
                 s.error = Some(err);
             }
@@ -520,6 +529,7 @@ fn refresh(s: &mut State, fx: &mut Fx) {
     s.loading = true;
     s.error = None;
     s.refresh_from = s.confirms;
+    s.incoming = None;
     fx.push(Effect::FetchBoard { seq: s.seq });
 }
 
@@ -540,23 +550,54 @@ fn keep_confirmed(s: &State, mut cards: Cards) -> Cards {
     cards
 }
 
-fn board_loaded(s: &mut State, fx: &mut Fx, seq: u64, board: Board) {
+/// One page of a board fetch. The board shows every card read so far, in
+/// GitHub's order, followed by any cards from before the fetch it has not
+/// reached yet: the first load fills in page by page, and a refresh never
+/// blanks the board. The last page drops the cards it never saw.
+fn board_page(s: &mut State, fx: &mut Fx, seq: u64, board: Board, last: bool) {
     if seq != s.seq {
         return;
     }
-    s.loading = false;
     let Board { meta, cards } = board;
+    let first = s.incoming.is_none();
 
     let mut repos: Vec<(String, String)> = Vec::new();
+    let mut incoming = s.incoming.take().unwrap_or_default();
     for card in cards.iter() {
         if let (Some(id), Some(name)) = (&card.repo_id, &card.repo)
             && !repos.iter().any(|(r, _)| r == id)
         {
             repos.push((id.clone(), name.clone()));
         }
+        incoming.put(card.clone());
     }
 
-    s.base = keep_confirmed(s, cards);
+    let mut shown = incoming.clone();
+    if last {
+        s.loading = false;
+    } else {
+        for card in s.base.iter() {
+            if !shown.cards.contains_key(&card.item_id) {
+                shown.put(card.clone());
+            }
+        }
+        s.incoming = Some(incoming);
+    }
+    s.base = keep_confirmed(s, shown);
+    if first {
+        board_meta(s, fx, &meta);
+    }
+    s.meta = Some(meta);
+
+    for (repo_id, repo) in repos {
+        if !s.assignable.contains_key(&repo_id) && s.assignable_loading.insert(repo_id.clone()) {
+            fx.push(Effect::FetchAssignable { repo_id, repo });
+        }
+    }
+}
+
+/// Check the filters against a fetch's fields, once per fetch.
+fn board_meta(s: &mut State, fx: &mut Fx, meta: &Meta) {
     let field = meta.priority_field.as_ref();
     if let Filter::Priority(id) = &s.filter
         && field.and_then(|f| f.option_name(id)).is_none()
@@ -586,13 +627,6 @@ fn board_loaded(s: &mut State, fx: &mut Fx, seq: u64, board: Board) {
                 s.config.priority_field
             ),
         );
-    }
-    s.meta = Some(meta);
-
-    for (repo_id, repo) in repos {
-        if !s.assignable.contains_key(&repo_id) && s.assignable_loading.insert(repo_id.clone()) {
-            fx.push(Effect::FetchAssignable { repo_id, repo });
-        }
     }
 }
 
@@ -822,6 +856,15 @@ fn item_loaded(s: &mut State, fx: &mut Fx, rev: u64, card: Card) {
     if s.confirmed_at.get(&card.item_id).copied().unwrap_or(0) > rev {
         fx.push(fetch_item(s, card.item_id, None));
         return;
+    }
+    // A later page of a fetch in flight would otherwise bring back the older
+    // copy it read.
+    if let Some(incoming) = s
+        .incoming
+        .as_mut()
+        .filter(|i| i.cards.contains_key(&card.item_id))
+    {
+        incoming.put(card.clone());
     }
     s.base.put(card);
 }
