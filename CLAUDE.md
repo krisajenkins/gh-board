@@ -178,12 +178,37 @@ anything.
 
 Jujutsu (jj), git-colocated. Use `jj`; never git commands.
 
+## Cutting a release
+
+Releases are the user's call. Pushing a `vX.Y.Z` tag runs
+`.github/workflows/release.yml`: it checks the tag matches `Cargo.toml`, runs
+fmt/clippy/tests, builds Linux (musl) and macOS binaries for x86_64 and
+aarch64, and publishes a GitHub release with them and generated notes. No
+manual upload is needed.
+
+```bash
+# in the empty working-copy change on top of the work to release
+sed -i 's/^version = ".*"/version = "X.Y.Z"/' Cargo.toml   # the package's (only) line-start version
+cargo update -p gh-board --offline                         # bump Cargo.lock to match
+cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
+jj desc -m "Cutting vX.Y.Z."
+jj bookmark set main -r @
+jj tag set vX.Y.Z -r @          # @ becomes immutable; jj starts a fresh change on top
+jj git push --bookmark main
+jj git push --tag vX.Y.Z
+gh run list --limit 2           # CI (main) and Release (tag); watch with `gh run watch <id>`
+gh release view vX.Y.Z          # eight assets: four .tar.gz plus their .sha256
+```
+
+`sed` here is GNU sed (from Nix): `sed -i`, not `sed -i ''`. Don't run `jj new`
+after `jj tag set`; jj has already made the new working-copy change.
+
 <!-- agent-conventions: maintained by work-items -->
 ## Project conventions (cached)
 
 - Verify: `cargo fmt`; `cargo clippy --all-targets -- -D warnings`; `cargo test`; `scripts/check-schema.sh` (only when `src/queries.rs` changes)
 - Format: `cargo fmt` (folded into Verify)
-- Publish: none (releases are tag pushes, the user's call)
+- Publish: none (releases are tag pushes, the user's call; see "Cutting a release")
 - Item store: `github-issues`
 - Auto-close: `Closes #N`
 - Blocked label: `blocked`
