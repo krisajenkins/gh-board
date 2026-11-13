@@ -2,7 +2,7 @@
 source: tests/ui_detail.rs
 expression: t.backend()
 ---
-" Todo (3)                 Blocked (0)              In Progress (1)          Ready (0)               "
+" Todo (3)                                          Blocked (0)                                      "
 "╭─╭───────────────────────────────────────────── #3 ─────────────────────────────────────────────╮  "
 "│ │ #3 Card 3                                                                                    │  "
 "│ │ https://github.com/acme/plans/issues/3                                                       │  "
@@ -31,4 +31,4 @@ expression: t.backend()
 "  ╰ e edit · c comment · s p a x m u · o browser · r reload · ? help · q close ───────── 1-24/26 ╯  "
 "                                                                                                    "
 "                                                                                                    "
-" Plans  Priority: All (1-4 · 0 all · 5 none) │ Done hidden                        3 pending  ? help "
+" Plans  Priority: All (1-4 · 0 all · 5 none) │ Done hidden                    3 pending  →2  ? help "

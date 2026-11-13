@@ -62,9 +62,11 @@ gh-board --owner my-org --project 1
 Each column is a status; each card a rounded box with its number and title,
 then its priority, `@assignees` and labels. The focused card has a cyan
 border. `~` and a blue border mark a change not yet confirmed by GitHub; `!`
-and a red border one that failed. Long columns scroll (the header shows how
-many cards are above `↑` and below `↓`), and when the columns do not all fit
-the board scrolls sideways.
+and a red border one that failed. Long columns scroll, and columns are at
+least 40 cells wide; when they do not all fit the board scrolls sideways. As
+in vim, the right of the status line shows where you are: how many columns
+are off screen to the left `←` and right `→`, and how many of the focused
+column's cards are above `↑` and below `↓`.
 
 | Key             | Action                                                        |
 | --------------- | ------------------------------------------------------------- |

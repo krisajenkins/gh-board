@@ -555,8 +555,8 @@ fn going_to_the_bottom_of_a_long_column_scrolls_it() {
 #[test]
 fn moving_right_past_the_edge_scrolls_columns() {
     let s = loaded();
-    // 40 cells hold two 18-wide columns; there are four.
-    let area = Rect::new(0, 0, 40, 20);
+    // 90 cells hold two columns of at least 40; there are four.
+    let area = Rect::new(0, 0, 90, 20);
     let (ui, s, _) = press(UiState::default(), s, &[ch('l'), ch('l')]);
     assert_eq!(ui.settle(&s, area).scroll.first_col, 1);
 }

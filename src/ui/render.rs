@@ -22,13 +22,14 @@ use crate::update::Level;
 pub fn render(frame: &mut Frame, state: &State, ui: &UiState) {
     let areas = Areas::new(frame.area());
     let v = model::board(state);
-    if v.columns.is_empty() {
+    let offscreen = if v.columns.is_empty() {
         render_message(frame, state, areas.board);
+        Offscreen::default()
     } else {
-        render_board(frame, state, ui, &v, areas);
-    }
+        render_board(frame, state, ui, &v, areas)
+    };
     render_message_line(frame, ui, areas.message);
-    render_status(frame, state, areas.status);
+    render_status(frame, state, offscreen, areas.status);
     if state.detail.is_some() {
         render_detail(frame, state, ui);
     }
@@ -221,12 +222,34 @@ fn render_message(frame: &mut Frame, state: &State, area: Rect) {
     frame.render_widget(Paragraph::new(lines), area);
 }
 
-fn render_board(frame: &mut Frame, state: &State, ui: &UiState, v: &BoardView, areas: Areas) {
+/// What the board has scrolled out of view: columns to the left and right, and
+/// cards above and below in the focused column.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Offscreen {
+    pub left: usize,
+    pub above: usize,
+    pub below: usize,
+    pub right: usize,
+}
+
+/// Draw the columns that fit; returns what is scrolled out of view.
+fn render_board(
+    frame: &mut Frame,
+    state: &State,
+    ui: &UiState,
+    v: &BoardView,
+    areas: Areas,
+) -> Offscreen {
     let n = v.columns.len();
     let total = usize::from(areas.board.width);
     let (w, visible) = column_layout(n, total);
     let first_col = ui.scroll.first_col.min(n - visible);
     let meta = state.meta.as_ref();
+    let mut offscreen = Offscreen {
+        left: first_col,
+        right: n - first_col - visible,
+        ..Offscreen::default()
+    };
     for (i, ci) in (first_col..first_col + visible).enumerate() {
         let x = areas.board.x + to_u16(i * (w + GAP));
         let cw = to_u16(w).min(areas.board.right().saturating_sub(x));
@@ -242,13 +265,11 @@ fn render_board(frame: &mut Frame, state: &State, ui: &UiState, v: &BoardView, a
             inner: w.saturating_sub(2),
         };
         let shown = column.render(frame, Rect::new(x, areas.board.y, cw, areas.board.height));
-        let header = header_text(
-            &col.name,
-            col.cards.len(),
-            column.first(),
-            col.cards.len().saturating_sub(column.first() + shown),
-            usize::from(cw),
-        );
+        if focused {
+            offscreen.above = column.first();
+            offscreen.below = col.cards.len().saturating_sub(column.first() + shown);
+        }
+        let header = header_text(&col.name, col.cards.len(), usize::from(cw));
         let style = if focused {
             theme::HEADER_FOCUS
         } else {
@@ -259,23 +280,14 @@ fn render_board(frame: &mut Frame, state: &State, ui: &UiState, v: &BoardView, a
             Rect::new(x, areas.header.y, cw, areas.header.height),
         );
     }
+    offscreen
 }
 
-/// A column header exactly `w` cells wide: ` Todo (12)`, and on the right how
-/// many cards are scrolled off above and below.
-pub fn header_text(name: &str, count: usize, above: usize, below: usize, w: usize) -> String {
-    let right = match (above, below) {
-        (0, 0) => String::new(),
-        (a, 0) => format!("↑{a} "),
-        (0, b) => format!("↓{b} "),
-        (a, b) => format!("↑{a} ↓{b} "),
-    };
-    let left = fit(
-        &format!(" {name} ({count})"),
-        w.saturating_sub(width(&right) + 1),
-    );
-    let pad = w.saturating_sub(width(&left) + width(&right));
-    fit(&format!("{left}{}{right}", " ".repeat(pad)), w)
+/// A column header exactly `w` cells wide: ` Todo (12)`.
+pub fn header_text(name: &str, count: usize, w: usize) -> String {
+    let text = fit(&format!(" {name} ({count})"), w);
+    let pad = w.saturating_sub(width(&text));
+    format!("{text}{}", " ".repeat(pad))
 }
 
 struct ColumnView<'a> {
@@ -387,9 +399,20 @@ fn tail(s: &str, w: usize) -> &str {
     &s[start..]
 }
 
+/// `←2 ↑3 `: each nonzero count after its arrow, each followed by a space.
+fn arrows(counts: &[(&str, usize)]) -> String {
+    counts
+        .iter()
+        .filter(|(_, k)| *k > 0)
+        .map(|(arrow, k)| format!("{arrow}{k} "))
+        .collect()
+}
+
 /// The status line's text as styled segments: what the board is showing on
-/// the left, what is happening on the right.
-pub fn status_segments(state: &State) -> (Segments, Segments) {
+/// the left; on the right what is happening, then where the view is, as vim
+/// puts the cursor position: columns off screen to the left `←` and right
+/// `→`, and the focused column's cards above `↑` and below `↓`.
+pub fn status_segments(state: &State, offscreen: Offscreen) -> (Segments, Segments) {
     let meta = state.meta.as_ref();
     let title = meta.map_or("gh-board", |m| m.title.as_str());
     let options = meta
@@ -442,12 +465,22 @@ pub fn status_segments(state: &State) -> (Segments, Segments) {
     if failed > 0 {
         right.push((format!("{failed} failed (! to review) "), theme::FAILED));
     }
+    let Offscreen {
+        left: l,
+        above,
+        below,
+        right: r,
+    } = offscreen;
+    let position = arrows(&[("←", l), ("↑", above), ("↓", below), ("→", r)]);
+    if !position.is_empty() {
+        right.push((format!(" {position}"), theme::KEY));
+    }
     right.push((" ? help ".into(), plain));
     (left, right)
 }
 
-fn render_status(frame: &mut Frame, state: &State, area: Rect) {
-    let (left, right) = status_segments(state);
+fn render_status(frame: &mut Frame, state: &State, offscreen: Offscreen, area: Rect) {
+    let (left, right) = status_segments(state, offscreen);
     let w = usize::from(area.width);
     let right = compose(right, w);
     let rw = right.width();
@@ -529,21 +562,33 @@ mod tests {
 
     #[test]
     fn header_shows_name_and_count() {
-        assert_eq!(header_text("Todo", 12, 0, 0, 14), " Todo (12)    ");
+        assert_eq!(header_text("Todo", 12, 14), " Todo (12)    ");
     }
 
     #[test]
-    fn header_shows_cards_scrolled_off() {
-        assert_eq!(header_text("Todo", 56, 3, 40, 22), " Todo (56)     ↑3 ↓40 ");
-        assert_eq!(width(&header_text("Todo", 56, 3, 40, 22)), 22);
-        assert_eq!(header_text("Todo", 56, 0, 40, 16), " Todo (56)  ↓40 ");
-    }
-
-    #[test]
-    fn header_truncates_a_long_name_before_the_counts() {
-        let h = header_text("Waiting for review", 5, 0, 2, 16);
-        assert_eq!(h, " Waiting fo… ↓2 ");
+    fn header_truncates_a_long_name() {
+        let h = header_text("Waiting for review", 5, 16);
+        assert_eq!(h, " Waiting for re…");
         assert_eq!(width(&h), 16);
+    }
+
+    #[test]
+    fn status_shows_where_the_view_is() {
+        let text = |left, above, below, right| {
+            let off = Offscreen {
+                left,
+                above,
+                below,
+                right,
+            };
+            let (_, segments) =
+                status_segments(&State::new(crate::types::Config::new("acme", 1)), off);
+            segments.into_iter().map(|(t, _)| t).collect::<String>()
+        };
+        assert_eq!(text(0, 0, 0, 0), " ? help ");
+        assert_eq!(text(2, 0, 0, 0), " ←2  ? help ");
+        assert_eq!(text(0, 3, 40, 0), " ↑3 ↓40  ? help ");
+        assert_eq!(text(1, 3, 40, 5), " ←1 ↑3 ↓40 →5  ? help ");
     }
 
     #[test]

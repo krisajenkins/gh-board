@@ -2,11 +2,11 @@
 source: tests/ui_render.rs
 expression: t.backend()
 ---
-" Todo (1)                 Blocked (0)              In Progress (0)          Ready (0)               "
-"┏━━━━━━━━━━━━━━━━━━━━━━┓   (empty)                  (empty)                  (empty)                "
-"┃ #3 Card 3            ┃                                                                            "
-"┃ @amy blog            ┃                                                                            "
-"┗━━━━━━━━━━━━━━━━━━━━━━┛                                                                            "
+" Todo (1)                                          Blocked (0)                                      "
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓   (empty)                                         "
+"┃ #3 Card 3                                     ┃                                                   "
+"┃ @amy blog                                     ┃                                                   "
+"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛                                                   "
 "                                                                                                    "
 "                                                                                                    "
 "                                                                                                    "
@@ -31,4 +31,4 @@ expression: t.backend()
 "                                                                                                    "
 "                                                                                                    "
 "/blog                                                                                               "
-" Plans  Priority: All (1-4 · 0 all · 5 none) │ Search: /blog (C-l clears) │ Done hidden      ? help "
+" Plans  Priority: All (1-4 · 0 all · 5 none) │ Search: /blog (C-l clears) │ Done hidden  →2  ? help "

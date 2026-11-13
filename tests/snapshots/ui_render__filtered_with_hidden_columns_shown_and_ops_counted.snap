@@ -2,8 +2,8 @@
 source: tests/ui_render.rs
 expression: "draw(&s, &UiState::default()).backend()"
 ---
-" Todo (0)            Blocked (0)         In Progress (0)     Ready (0)           Done (0)           "
-"  (empty)             (empty)             (empty)             (empty)             (empty)           "
+" Todo (0)                                          Blocked (0)                                      "
+"  (empty)                                           (empty)                                         "
 "                                                                                                    "
 "                                                                                                    "
 "                                                                                                    "
@@ -31,4 +31,4 @@ expression: "draw(&s, &UiState::default()).backend()"
 "                                                                                                    "
 "                                                                                                    "
 "                                                                                                    "
-" Plans  Priority: High (1-4 · 0 all · 5 none) │ showing Do… loading… 1 failed (! to review)  ? help "
+" Plans  Priority: High (1-4 · 0 all · 5 none) │ showin… loading… 1 failed (! to review)  →3  ? help "

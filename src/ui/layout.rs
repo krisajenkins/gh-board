@@ -2,8 +2,10 @@
 //! focused card stays visible. Pure arithmetic on sizes.
 
 /// Columns are never narrower than this; when they do not all fit, the board
-/// scrolls sideways.
-pub const MIN_COL_WIDTH: usize = 18;
+/// scrolls sideways. 40 leaves 38 cells inside a card's border, so a typical
+/// 60-80 character tracking-issue title fits its two lines, while a 100-wide
+/// terminal still shows two columns and a 250-wide one six.
+pub const MIN_COL_WIDTH: usize = 40;
 /// Cells between columns.
 pub const GAP: usize = 1;
 
@@ -16,10 +18,11 @@ pub fn column_width(n: usize, width: usize) -> usize {
 }
 
 /// The column width and how many columns show: as many as fit at
-/// [`column_width`], then widened to fill the space between them.
+/// [`column_width`], then widened to fill the space between them. A screen
+/// narrower than the minimum shows one column, as wide as the screen.
 pub fn column_layout(n: usize, width: usize) -> (usize, usize) {
     let visible = visible_columns(n, column_width(n, width), width);
-    (column_width(visible, width), visible)
+    (column_width(visible, width).min(width), visible)
 }
 
 /// How many columns of width `w` fit side by side in `width` (at least one).
@@ -94,7 +97,7 @@ mod tests {
 
     #[test]
     fn columns_share_the_width_less_the_gaps() {
-        assert_eq!(column_width(4, 100), 24); // (100 - 3) / 4
+        assert_eq!(column_width(2, 100), 49); // (100 - 1) / 2
         assert_eq!(column_width(1, 80), 80);
     }
 
@@ -106,16 +109,18 @@ mod tests {
     #[test]
     fn as_many_columns_show_as_fit() {
         assert_eq!(visible_columns(4, 24, 100), 4);
-        assert_eq!(visible_columns(10, 18, 100), 5); // 5 * 18 + 4 = 94
-        assert_eq!(visible_columns(10, 18, 10), 1);
-        assert_eq!(visible_columns(2, 18, 200), 2);
+        assert_eq!(visible_columns(10, 40, 100), 2); // 2 * 40 + 1 = 81
+        assert_eq!(visible_columns(10, 40, 10), 1);
+        assert_eq!(visible_columns(2, 40, 200), 2);
     }
 
     #[test]
     fn columns_that_do_not_all_fit_widen_to_fill() {
-        assert_eq!(column_layout(4, 100), (24, 4));
-        assert_eq!(column_layout(4, 40), (19, 2)); // 19 + 1 + 19 + 1 spare
-        assert_eq!(column_layout(10, 100), (19, 5));
+        assert_eq!(column_layout(2, 100), (49, 2)); // (100 - 1) / 2
+        assert_eq!(column_layout(3, 100), (49, 2)); // 3 * 40 + 2 = 122 > 100
+        assert_eq!(column_layout(4, 90), (44, 2)); // 44 + 1 + 44 + 1 spare
+        assert_eq!(column_layout(7, 244), (48, 5)); // 6 * 40 + 5 = 245 > 244
+        assert_eq!(column_layout(10, 20), (20, 1));
         assert_eq!(column_layout(0, 50), (50, 1));
     }
 

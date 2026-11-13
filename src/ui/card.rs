@@ -9,7 +9,8 @@ use crate::ui::text::{Segments, compose, split_words, width};
 use crate::ui::theme;
 
 /// The lines inside a card's box, each at most `inner` cells: the title
-/// (wrapped onto a second line when long, truncated after that), then the
+/// (wrapped onto a second line, from the card's edge, when long; truncated
+/// after that), then the
 /// priority, assignees and labels.
 pub fn lines(card: &Card, meta: Option<&Meta>, inner: usize) -> Vec<Line<'static>> {
     let mut first: Segments = vec![(" ".into(), Style::default())];
@@ -32,12 +33,10 @@ pub fn lines(card: &Card, meta: Option<&Meta>, inner: usize) -> Vec<Line<'static
     first.push((head.into(), title_style));
     let mut out = vec![compose(first, inner)];
     if let Some(rest) = rest.filter(|r| !r.is_empty()) {
-        // The continuation lines up under the title; compose truncates it.
+        // The continuation starts at the card's edge, not under the title,
+        // so it gets the full width; compose truncates it.
         out.push(compose(
-            vec![
-                (" ".repeat(indent), Style::default()),
-                (rest.into(), title_style),
-            ],
+            vec![(" ".into(), Style::default()), (rest.into(), title_style)],
             inner,
         ));
     }
@@ -133,11 +132,11 @@ mod tests {
     }
 
     #[test]
-    fn a_long_title_wraps_under_itself_then_truncates() {
+    fn a_long_title_wraps_to_the_card_edge_then_truncates() {
         let c = card("Write the launch blog post for the new release");
         assert_eq!(
             plain(&lines(&c, None, 20)),
-            [" #41 Write the", "     launch blog po…", " "]
+            [" #41 Write the", " launch blog post f…", " "]
         );
         assert_eq!(height(&c, None, 20), 5);
     }

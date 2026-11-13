@@ -104,14 +104,15 @@ fn focus_moves_the_highlight() {
     let buf = t.backend().buffer();
     assert_border(buf, 0, 1, theme::CARD);
     assert_border(buf, 0, 5, theme::CARD_FOCUS);
-    // Over to In Progress: (100 - 3) / 4 = 24 wide, so column 2 starts at 50.
+    // Over to In Progress, 150 wide: three of the four columns fit,
+    // (150 - 2) / 3 = 49 wide, so column 2 starts at 100.
     let s = step(s, Msg::Focus(Direction::Right));
     let s = step(s, Msg::Focus(Direction::Right));
-    let t = draw(&s, &UiState::default());
+    let t = draw_sized(&s, &UiState::default(), 150, H);
     let buf = t.backend().buffer();
     assert_border(buf, 0, 5, theme::CARD);
-    assert_border(buf, 50, 1, theme::CARD_FOCUS);
-    assert_eq!(buf[(51, 0)].bg, theme::HEADER_FOCUS.bg.unwrap());
+    assert_border(buf, 100, 1, theme::CARD_FOCUS);
+    assert_eq!(buf[(101, 0)].bg, theme::HEADER_FOCUS.bg.unwrap());
 }
 
 #[test]

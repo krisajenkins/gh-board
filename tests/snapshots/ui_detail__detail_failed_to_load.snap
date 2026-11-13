@@ -2,7 +2,7 @@
 source: tests/ui_detail.rs
 expression: "draw(&s, &UiState::default()).backend()"
 ---
-" Todo (3)                 Blocked (0)              In Progress (1)          Ready (0)               "
+" Todo (3)                                          Blocked (0)                                      "
 "╭─╭───────────────────────────────────────────── #3 ─────────────────────────────────────────────╮  "
 "│ │ #3 Card 3                                                                                    │  "
 "│ │ https://github.com/acme/plans/issues/3                                                       │  "
@@ -31,4 +31,4 @@ expression: "draw(&s, &UiState::default()).backend()"
 "  ╰ e edit · c comment · s p a x m u · o browser · r reload · ? help · q close ──────────────────╯  "
 "                                                                                                    "
 "                                                                                                    "
-" Plans  Priority: All (1-4 · 0 all · 5 none) │ Done hidden                                   ? help "
+" Plans  Priority: All (1-4 · 0 all · 5 none) │ Done hidden                               →2  ? help "
