@@ -17,7 +17,7 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::model::{Op, OpKind};
-use crate::types::{Config, IssueState, Meta, StateReason};
+use crate::types::{Config, IssueState, Member, Meta, StateReason};
 
 /// A GraphQL request, serialised as the JSON body `gh api graphql --input -`
 /// reads from stdin. (Never use `-F`: it reads `@foo` as a file.)
@@ -48,7 +48,7 @@ fragment CardIssue on Issue {
   id number title url state stateReason
   repository { id nameWithOwner }
   assignees(first: 20) { nodes { id login } }
-  labels(first: 20) { nodes { name } }
+  labels(first: 20) { nodes { id name } }
   issueFieldValues(first: 20) {
     nodes {
       ... on IssueFieldSingleSelectValue { optionId field { ... on IssueFieldSingleSelect { id } } }
@@ -140,12 +140,30 @@ query($owner: String!, $name: String!) {
 }
 "#;
 
-/// The users who may be assigned issues in a repository (`owner/name`).
-pub fn assignable(name_with_owner: &str) -> Request {
+/// A query on one repository, named `owner/name`.
+fn on_repo(doc: &str, name_with_owner: &str) -> Request {
     let (owner, name) = name_with_owner
         .split_once('/')
         .unwrap_or(("", name_with_owner));
-    request(ASSIGNABLE, json!({ "owner": owner, "name": name }))
+    request(doc, json!({ "owner": owner, "name": name }))
+}
+
+/// The users who may be assigned issues in a repository (`owner/name`).
+pub fn assignable(name_with_owner: &str) -> Request {
+    on_repo(ASSIGNABLE, name_with_owner)
+}
+
+const LABELS: &str = r#"
+query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    labels(first: 100, orderBy: { field: NAME, direction: ASC }) { nodes { id name } }
+  }
+}
+"#;
+
+/// A repository's labels (`owner/name`).
+pub fn labels(name_with_owner: &str) -> Request {
+    on_repo(LABELS, name_with_owner)
 }
 
 const SET_STATUS: &str = r#"
@@ -256,11 +274,43 @@ pub fn set_priority(issue_id: &str, field_id: &str, option_id: Option<&str>) -> 
     )
 }
 
-/// Add and/or remove assignees in one request. Root mutation fields run in
-/// order, so the last one's payload reflects both changes; only the non-empty
-/// halves are included, and the response is decoded from whichever ran last.
-pub fn set_assignees(issue_id: &str, add_ids: &[&str], remove_ids: &[&str]) -> Request {
-    let payload = "{ assignable { ... on Issue { ...CardIssue } } }";
+/// The pair of mutations that add members to and remove them from one of an
+/// issue's sets (its assignees, its labels), and the names of their inputs.
+struct SetMutations {
+    add: &'static str,
+    remove: &'static str,
+    /// The input naming the issue, and the payload field holding it.
+    subject: &'static str,
+    /// The input listing the members' ids.
+    ids: &'static str,
+}
+
+const ASSIGNEES: SetMutations = SetMutations {
+    add: "addAssigneesToAssignable",
+    remove: "removeAssigneesFromAssignable",
+    subject: "assignable",
+    ids: "assigneeIds",
+};
+
+const LABEL_SET: SetMutations = SetMutations {
+    add: "addLabelsToLabelable",
+    remove: "removeLabelsFromLabelable",
+    subject: "labelable",
+    ids: "labelIds",
+};
+
+/// Add and/or remove members of an issue's set in one request, aliased
+/// `removed` and `added`. Root mutation fields run in order, so the last
+/// one's payload reflects both changes; only the non-empty halves are
+/// included, and the response is decoded from whichever ran last.
+fn change_set(m: &SetMutations, issue_id: &str, add_ids: &[&str], remove_ids: &[&str]) -> Request {
+    let SetMutations {
+        add,
+        remove,
+        subject,
+        ids,
+    } = m;
+    let payload = format!("{{ {subject} {{ ... on Issue {{ ...CardIssue }} }} }}");
     let mut params = vec!["$issueId: ID!"];
     let mut fields = Vec::new();
     let mut variables = Map::new();
@@ -268,14 +318,14 @@ pub fn set_assignees(issue_id: &str, add_ids: &[&str], remove_ids: &[&str]) -> R
     if !remove_ids.is_empty() {
         params.push("$remove: [ID!]!");
         fields.push(format!(
-            "  removed: removeAssigneesFromAssignable(input: {{ assignableId: $issueId, assigneeIds: $remove }}) {payload}"
+            "  removed: {remove}(input: {{ {subject}Id: $issueId, {ids}: $remove }}) {payload}"
         ));
         variables.insert("remove".into(), json!(remove_ids));
     }
     if !add_ids.is_empty() {
         params.push("$add: [ID!]!");
         fields.push(format!(
-            "  added: addAssigneesToAssignable(input: {{ assignableId: $issueId, assigneeIds: $add }}) {payload}"
+            "  added: {add}(input: {{ {subject}Id: $issueId, {ids}: $add }}) {payload}"
         ));
         variables.insert("add".into(), json!(add_ids));
     }
@@ -285,6 +335,16 @@ pub fn set_assignees(issue_id: &str, add_ids: &[&str], remove_ids: &[&str]) -> R
         fields.join("\n")
     );
     request(query, Value::Object(variables))
+}
+
+/// Add and/or remove assignees, by user id.
+pub fn set_assignees(issue_id: &str, add_ids: &[&str], remove_ids: &[&str]) -> Request {
+    change_set(&ASSIGNEES, issue_id, add_ids, remove_ids)
+}
+
+/// Add and/or remove labels, by label id.
+pub fn set_labels(issue_id: &str, add_ids: &[&str], remove_ids: &[&str]) -> Request {
+    change_set(&LABEL_SET, issue_id, add_ids, remove_ids)
 }
 
 const COMMENT: &str = r#"
@@ -388,6 +448,10 @@ pub fn add_to_project(project_id: &str, content_id: &str, status_field: &str) ->
     )
 }
 
+fn ids(members: &[impl Member]) -> Vec<&str> {
+    members.iter().map(Member::id).collect()
+}
+
 /// The single request that carries out an op. `Err` for a create, which is
 /// several requests (`create_issue`, `add_to_project`, `set_status`) the
 /// shell runs in turn, and for an op the board cannot express.
@@ -412,11 +476,8 @@ pub fn for_op(op: &Op, meta: &Meta, config: &Config) -> Result<Request, String> 
                 .ok_or("this board has no priority field")?;
             set_priority(issue_id()?, &field.id, priority_id.as_deref())
         }
-        OpKind::Assign { add, remove } => {
-            let add: Vec<&str> = add.iter().map(|u| u.id.as_str()).collect();
-            let remove: Vec<&str> = remove.iter().map(|u| u.id.as_str()).collect();
-            set_assignees(issue_id()?, &add, &remove)
-        }
+        OpKind::Assign { add, remove } => set_assignees(issue_id()?, &ids(add), &ids(remove)),
+        OpKind::Label { add, remove } => set_labels(issue_id()?, &ids(add), &ids(remove)),
         OpKind::State {
             issue_state,
             state_reason,

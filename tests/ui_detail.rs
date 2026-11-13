@@ -673,6 +673,100 @@ fn enter_with_no_matches_does_nothing() {
     assert!(sent.is_empty());
 }
 
+/// The standard board's detail (#3, labelled "blog") with its label picker
+/// open and the repository's labels loaded.
+fn label_picker() -> (UiState, State) {
+    let (ui, s, _, _) = press(UiState::default(), with_labels(detail_open()), &[ch('l')]);
+    (ui, s)
+}
+
+#[test]
+fn label_picker_loads_the_repositorys_labels_once() {
+    let (ui, s, sent, _) = press(UiState::default(), detail_open(), &[ch('l')]);
+    assert_eq!(picker_mode(&ui).kind, PickerKind::Label);
+    assert_eq!(
+        sent,
+        vec![Msg::LoadLabels {
+            repo_id: "r-plans".into(),
+            repo: "acme/plans".into(),
+        }]
+    );
+    let m = menu(&s, picker_mode(&ui)).expect("a menu");
+    assert!(m.loading);
+    assert!(m.choices.is_empty());
+    let s = with_labels(s);
+    let m = menu(&s, picker_mode(&ui)).expect("a menu");
+    assert!(!m.loading);
+    assert_eq!(labels(&m), ["blog", "Bug", "docs", "good first issue"]);
+
+    let (_, _, sent, _) = press(UiState::default(), s, &[ch('l')]);
+    assert!(sent.is_empty(), "already loaded");
+}
+
+#[test]
+fn label_picks_toggle_and_the_picker_stays_open() {
+    let (ui, s) = label_picker();
+    let m = menu(&s, picker_mode(&ui)).expect("a menu");
+    assert_eq!(
+        m.choices.iter().map(|c| c.marked).collect::<Vec<_>>(),
+        [true, false, false, false],
+        "the card's labels are ticked"
+    );
+    assert!(m.stays_open);
+    // Take "blog" off, put "docs" on.
+    let (ui, s, sent, _) = press(ui, s, &[key(KeyCode::Enter)]);
+    assert_eq!(
+        sent,
+        vec![Msg::ToggleLabel {
+            item_id: ITEM3.into(),
+            label: label("blog"),
+        }]
+    );
+    let (ui, s, _, _) = press(
+        ui,
+        s,
+        &[key(KeyCode::Down), key(KeyCode::Down), key(KeyCode::Enter)],
+    );
+    assert_eq!(picker_mode(&ui).cursor, 2, "still open, same place");
+    let m = menu(&s, picker_mode(&ui)).expect("a menu");
+    assert_eq!(
+        m.choices.iter().map(|c| c.marked).collect::<Vec<_>>(),
+        [false, false, true, false],
+        "ticks follow the optimistic card"
+    );
+    assert_eq!(view(&s).cards[ITEM3].labels, [label("docs")]);
+    let (ui, _, sent, _) = press(ui, s, &[key(KeyCode::Esc)]);
+    assert_eq!(ui.mode, Mode::Board);
+    assert!(sent.is_empty());
+}
+
+#[test]
+fn typing_filters_the_labels_fuzzily() {
+    let (ui, s) = label_picker();
+    let (ui, s, sent, _) = press(ui, s, &[ch('g'), ch('f'), ch('i')]);
+    assert!(sent.is_empty(), "letters type");
+    assert_eq!(picker_mode(&ui).filter, "gfi");
+    assert_eq!(
+        labels(&menu(&s, picker_mode(&ui)).expect("a menu")),
+        ["good first issue"]
+    );
+    let (_, _, sent, _) = press(ui, s, &[key(KeyCode::Enter)]);
+    assert_eq!(
+        sent,
+        vec![Msg::ToggleLabel {
+            item_id: ITEM3.into(),
+            label: label("good first issue"),
+        }]
+    );
+    // Smart case.
+    let (ui, s) = label_picker();
+    let (ui, s, _, _) = press(ui, s, &[ch('B')]);
+    assert_eq!(
+        labels(&menu(&s, picker_mode(&ui)).expect("a menu")),
+        ["Bug"]
+    );
+}
+
 #[test]
 fn a_picker_closes_if_its_card_goes() {
     let s = with_assignable(detail_open());
@@ -875,6 +969,23 @@ fn assignee_picker_with_no_matches() {
     let (ui, s, _, _) = press(ui, s, &[ch('q'), ch('q')]);
     let t = draw(&s, &ui);
     assert!(find_row(&t, "(no matches)").is_some());
+    assert_snapshot!(t.backend());
+}
+
+#[test]
+fn label_picker_loading_then_loaded() {
+    let (ui, s, _, _) = press(UiState::default(), detail_open(), &[ch('l')]);
+    assert!(find_row(&draw(&s, &ui), "loading…").is_some());
+    let s = with_labels(s);
+    assert_snapshot!(draw(&s, &ui).backend());
+}
+
+#[test]
+fn label_picker_filtered() {
+    let (ui, s) = label_picker();
+    let (ui, s, _, _) = press(ui, s, &[ch('o')]);
+    let t = draw(&s, &ui);
+    assert!(find_row(&t, "› o").is_some());
     assert_snapshot!(t.backend());
 }
 

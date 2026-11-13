@@ -59,7 +59,7 @@ fn meta_segments(card: &Card, meta: Option<&Meta>) -> Segments {
         };
         (format!("@{}", u.login), style)
     });
-    let labels = card.labels.iter().map(|l| (l.clone(), theme::LABEL));
+    let labels = card.labels.iter().map(|l| (l.name.clone(), theme::LABEL));
     let items: Vec<_> = priority
         .into_iter()
         .chain(assignees)

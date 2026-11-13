@@ -27,6 +27,7 @@ pub fn is_network(effect: &Effect) -> bool {
         effect,
         Effect::FetchBoard { .. }
             | Effect::FetchAssignable { .. }
+            | Effect::FetchLabels { .. }
             | Effect::FetchItem { .. }
             | Effect::FetchDetail { .. }
             | Effect::Mutate { .. }
@@ -91,6 +92,15 @@ pub fn perform(
             dispatch(match users {
                 Ok(users) => Msg::AssignableLoaded { repo_id, users },
                 Err(err) => Msg::AssignableFailed { repo_id, err },
+            })
+        }
+        Effect::FetchLabels { repo_id, repo } => {
+            let labels = gh
+                .graphql(&queries::labels(&repo))
+                .and_then(|data| decode::labels(&data));
+            dispatch(match labels {
+                Ok(labels) => Msg::LabelsLoaded { repo_id, labels },
+                Err(err) => Msg::LabelsFailed { repo_id, err },
             })
         }
         Effect::FetchDetail { seq, issue_id } => {

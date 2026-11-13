@@ -1,17 +1,19 @@
-//! Pickers: small list popups for a card's status, priority, assignees and
-//! open/closed state. A picker stores only what it is for and where the cursor
-//! is; its choices are derived from the live state each time, so the assignee
-//! ticks update as soon as a toggle is dispatched. Pure.
+//! Pickers: small list popups for a card's status, priority, assignees,
+//! labels and open/closed state. A picker stores only what it is for and where
+//! the cursor is; its choices are derived from the live state each time, so
+//! the assignee and label ticks update as soon as a toggle is dispatched. Pure.
 //!
-//! The assignee picker can be filtered by typing, fuzzily as in the board's
-//! search (`jdt` finds `@jdetter`), and offers "Assign to me" first.
+//! The assignee and label pickers are multiselects over a list fetched per
+//! repository: filtered by typing, fuzzily as in the board's search (`jdt`
+//! finds `@jdetter`), with a tick on each member the card has. The assignee
+//! picker offers "Assign to me" first.
 //!
 //! The close picker's "Duplicate of…" opens the duplicate picker: every other
 //! issue on the board, filtered by typing as the board's `/` search is.
 
 use crate::model::{State, view};
 use crate::search;
-use crate::types::{Card, IssueState, ItemId, StateReason, User};
+use crate::types::{Card, IssueState, ItemId, Label, StateReason, User};
 use crate::update::Msg;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -22,6 +24,8 @@ pub enum PickerKind {
     Close,
     /// Toggle assignees; stays open until dismissed.
     Assignee,
+    /// Toggle labels; stays open until dismissed.
+    Label,
     /// Pick the issue an issue duplicates, from the board's other issues.
     Duplicate,
 }
@@ -61,7 +65,8 @@ pub struct Menu {
     pub choices: Vec<Choice>,
     /// The mark for `marked` choices.
     pub mark: &'static str,
-    /// Assignable users are still being fetched.
+    /// The list to pick from (assignable users, labels) is still being
+    /// fetched.
     pub loading: bool,
     /// Whether picking leaves the picker open.
     pub stays_open: bool,
@@ -190,7 +195,10 @@ pub fn menu(state: &State, picker: &Picker) -> Option<Menu> {
         }
         PickerKind::Assignee => {
             let viewer = &meta.viewer;
-            let users = card.repo_id.as_ref().and_then(|r| state.assignable.get(r));
+            let users = card
+                .repo_id
+                .as_deref()
+                .and_then(|r| state.assignable.get(r));
             let toggle = |u: &User| Msg::ToggleAssignee {
                 item_id: item_id.clone(),
                 user: u.clone(),
@@ -206,8 +214,8 @@ pub fn menu(state: &State, picker: &Picker) -> Option<Menu> {
                 },
             );
             let others = users
-                .into_iter()
-                .flatten()
+                .unwrap_or_default()
+                .iter()
                 .filter(|u| u.id != viewer.id)
                 .map(|u| {
                     (
@@ -222,22 +230,59 @@ pub fn menu(state: &State, picker: &Picker) -> Option<Menu> {
                         },
                     )
                 });
-            let terms = search::parse(&picker.filter);
-            let choices = std::iter::once(me)
-                .chain(others)
-                .filter(|(fields, _)| search::matches(&terms, fields))
-                .map(|(_, choice)| choice)
-                .collect();
-            Menu {
-                title: format!("Assignees for {}", label(&card)),
+            multiselect(
+                format!("Assignees for {}", label(&card)),
+                std::iter::once(me).chain(others),
+                &picker.filter,
+                users.is_none() && card.repo_id.is_some(),
+            )
+        }
+        PickerKind::Label => {
+            let labels = card.repo_id.as_deref().and_then(|r| state.labels.get(r));
+            let choices = labels.unwrap_or_default().iter().map(|l: &Label| {
+                (
+                    vec![l.name.clone()],
+                    Choice {
+                        label: l.name.clone(),
+                        marked: card.has_label(&l.id),
+                        pick: Pick::Send(Msg::ToggleLabel {
+                            item_id: item_id.clone(),
+                            label: l.clone(),
+                        }),
+                    },
+                )
+            });
+            multiselect(
+                format!("Labels for {}", label(&card)),
                 choices,
-                mark: "✓",
-                loading: users.is_none() && card.repo_id.is_some(),
-                stays_open: true,
-                filter: Some(picker.filter.clone()),
-            }
+                &picker.filter,
+                labels.is_none() && card.repo_id.is_some(),
+            )
         }
     })
+}
+
+/// A menu that toggles members of a set and stays open: each entry is the
+/// text the filter matches against and its choice, ticked when the card has
+/// it. `loading` while the list it offers is being fetched.
+fn multiselect(
+    title: String,
+    entries: impl Iterator<Item = (Vec<String>, Choice)>,
+    filter: &str,
+    loading: bool,
+) -> Menu {
+    let terms = search::parse(filter);
+    Menu {
+        title,
+        choices: entries
+            .filter(|(fields, _)| search::matches(&terms, fields))
+            .map(|(_, choice)| choice)
+            .collect(),
+        mark: "✓",
+        loading,
+        stays_open: true,
+        filter: Some(filter.into()),
+    }
 }
 
 /// What the assignee filter matches a user against: `@login`, and the
@@ -260,7 +305,7 @@ pub fn initial_cursor(state: &State, kind: PickerKind, item_id: &str) -> usize {
         PickerKind::Status | PickerKind::Priority => menu(state, &probe)
             .and_then(|m| m.choices.iter().position(|c| c.marked))
             .unwrap_or(0),
-        PickerKind::Close | PickerKind::Assignee | PickerKind::Duplicate => 0,
+        PickerKind::Close | PickerKind::Assignee | PickerKind::Label | PickerKind::Duplicate => 0,
     }
 }
 

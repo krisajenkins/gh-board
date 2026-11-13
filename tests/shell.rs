@@ -494,6 +494,33 @@ fn assignable_users_and_detail_are_fetched_and_decoded() {
     assert!(matches!(&msgs[..], [Msg::DetailLoaded { seq: 2, .. }]));
 }
 
+#[test]
+fn labels_are_fetched_and_decoded() {
+    let gh = Fake::new([
+        Ok(json!({ "repository": { "labels": { "nodes": [{ "id": "l1", "name": "bug" }] } } })),
+        Err("nope".into()),
+    ]);
+    let fetch = || Effect::FetchLabels {
+        repo_id: "r".into(),
+        repo: "acme/plans".into(),
+    };
+    let msgs = run(&gh, fetch());
+    assert!(
+        matches!(&msgs[..], [Msg::LabelsLoaded { repo_id, labels }] if repo_id == "r" && labels[0].name == "bug")
+    );
+    assert_eq!(
+        gh.seen.lock().unwrap()[0].variables,
+        json!({ "owner": "acme", "name": "plans" })
+    );
+    assert_eq!(
+        run(&gh, fetch()),
+        vec![Msg::LabelsFailed {
+            repo_id: "r".into(),
+            err: "nope".into()
+        }]
+    );
+}
+
 // Runner ----------------------------------------------------------------------
 
 #[test]

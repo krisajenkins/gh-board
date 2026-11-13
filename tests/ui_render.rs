@@ -170,7 +170,7 @@ fn long_and_wide_titles_wrap_then_truncate() {
         cards([
             Card {
                 title: "Write the launch blog post for the conference talk and the release".into(),
-                labels: vec!["blog".into(), "marketing".into(), "q3".into()],
+                labels: vec![label("blog"), label("marketing"), label("q3")],
                 assignees: vec![user("u-amy", "amy"), user("u-zed", "zed"), me()],
                 priority_id: Some("p-medium".into()),
                 ..card(41)

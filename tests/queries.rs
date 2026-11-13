@@ -63,6 +63,41 @@ fn assignee_changes_include_only_the_non_empty_halves_removal_first() {
 }
 
 #[test]
+fn label_changes_use_the_labelable_mutations_removal_first() {
+    let add_only = queries::set_labels("I", &["L1"], &[]);
+    assert_eq!(add_only.variables, json!({ "issueId": "I", "add": ["L1"] }));
+    assert!(
+        add_only.query.contains(
+            "added: addLabelsToLabelable(input: { labelableId: $issueId, labelIds: $add })"
+        )
+    );
+    assert!(!add_only.query.contains("removeLabels"));
+
+    let both = queries::set_labels("I", &["L1"], &["L2"]);
+    assert_eq!(
+        both.variables,
+        json!({ "issueId": "I", "add": ["L1"], "remove": ["L2"] })
+    );
+    let remove_at = both
+        .query
+        .find("removed: removeLabelsFromLabelable")
+        .unwrap();
+    let add_at = both.query.find("added: addLabelsToLabelable").unwrap();
+    assert!(
+        remove_at < add_at,
+        "add runs last, so its payload has both changes"
+    );
+    assert!(
+        both.query
+            .contains("labelable { ... on Issue { ...CardIssue } }")
+    );
+    assert!(
+        !both.query.contains("Assignee"),
+        "nothing of the assignee pair"
+    );
+}
+
+#[test]
 fn clearing_priority_sends_delete() {
     assert_eq!(
         queries::set_priority("I", "F", None).variables["fields"],
@@ -132,6 +167,13 @@ fn assignable_splits_name_with_owner() {
 }
 
 #[test]
+fn labels_are_read_from_the_named_repository() {
+    let r = queries::labels("acme/plans");
+    assert_eq!(r.variables, json!({ "owner": "acme", "name": "plans" }));
+    assert!(r.query.contains("labels(first: 100"));
+}
+
+#[test]
 fn a_request_serialises_as_gh_expects_on_stdin() {
     let body = serde_json::to_value(queries::detail("I_1")).unwrap();
     assert_eq!(body["variables"], json!({ "id": "I_1" }));
@@ -183,6 +225,20 @@ fn each_op_maps_to_its_request() {
     assert_eq!(
         assign.variables,
         json!({ "issueId": "issue1", "add": ["u-me"], "remove": ["u-zed"] })
+    );
+    let labels = queries::for_op(
+        &op(OpKind::Label {
+            add: vec![label("bug")],
+            remove: vec![label("blog")],
+        }),
+        &meta,
+        &config,
+    )
+    .unwrap();
+    assert!(labels.query.contains("addLabelsToLabelable"));
+    assert_eq!(
+        labels.variables,
+        json!({ "issueId": "issue1", "add": ["l-bug"], "remove": ["l-blog"] })
     );
     let comment =
         queries::for_op(&op(OpKind::Comment { body: "hi".into() }), &meta, &config).unwrap();

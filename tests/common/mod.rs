@@ -4,7 +4,9 @@
 pub mod gh;
 
 use gh_board::model::{Op, State, board};
-use gh_board::types::{Board, Card, Cards, Config, Field, FieldOption, IssueState, Meta, User};
+use gh_board::types::{
+    Board, Card, Cards, Config, Field, FieldOption, IssueState, Label, Meta, User,
+};
 use gh_board::update::{Effect, Msg, update};
 
 pub fn config() -> Config {
@@ -29,6 +31,14 @@ pub fn user(id: &str, login: &str) -> User {
         id: id.into(),
         login: login.into(),
         name: None,
+    }
+}
+
+/// A label whose id is `l-<name>`.
+pub fn label(name: &str) -> Label {
+    Label {
+        id: format!("l-{name}"),
+        name: name.into(),
     }
 }
 
@@ -102,7 +112,7 @@ pub fn items() -> Cards {
         },
         Card {
             assignees: vec![user("u-amy", "amy")],
-            labels: vec!["blog".into()],
+            labels: vec![label("blog")],
             ..card(3)
         },
         Card {
@@ -263,6 +273,22 @@ pub fn with_assignable(s: State) -> State {
                     ..user("u-zed", "zed")
                 },
                 me(),
+            ],
+        },
+    )
+}
+
+/// Labels for the standard board's repo, given out of order.
+pub fn with_labels(s: State) -> State {
+    step(
+        s,
+        Msg::LabelsLoaded {
+            repo_id: "r-plans".into(),
+            labels: vec![
+                label("docs"),
+                label("blog"),
+                label("Bug"),
+                label("good first issue"),
             ],
         },
     )

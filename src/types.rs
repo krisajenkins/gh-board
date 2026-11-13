@@ -13,6 +13,32 @@ pub struct User {
     pub name: Option<String>,
 }
 
+/// A member of one of an issue's sets (its assignees, its labels), known by
+/// its node id.
+pub trait Member {
+    fn id(&self) -> &str;
+}
+
+impl Member for User {
+    fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+impl Member for Label {
+    fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+/// An issue label. Labels belong to a repository, so cards from different
+/// repositories have different sets to choose from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Label {
+    pub id: String,
+    pub name: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FieldOption {
     pub id: String,
@@ -89,7 +115,7 @@ pub struct Card {
     pub status_id: Option<String>,
     pub priority_id: Option<String>,
     pub assignees: Vec<User>,
-    pub labels: Vec<String>,
+    pub labels: Vec<Label>,
     /// Still being created: exists only as an op.
     pub temp: bool,
     /// Derived: an operation on this card is unconfirmed.
@@ -109,6 +135,10 @@ impl Card {
 
     pub fn is_assigned(&self, user_id: &str) -> bool {
         self.assignees.iter().any(|u| u.id == user_id)
+    }
+
+    pub fn has_label(&self, label_id: &str) -> bool {
+        self.labels.iter().any(|l| l.id == label_id)
     }
 }
 

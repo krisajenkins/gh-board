@@ -21,6 +21,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("a", "assignees (type to filter; Enter toggles)"),
     ("m", "assign me"),
     ("u", "unassign everyone"),
+    ("l", "labels (type to filter; Enter toggles)"),
     ("x", "close (completed / not planned / duplicate) or reopen"),
     ("< >", "move to the previous / next status"),
     ("!", "review failed changes"),
@@ -34,7 +35,7 @@ pub const HELP: &[(&str, &str)] = &[
 
 /// The hint in the detail box's bottom border.
 pub const HINT: &str =
-    " e edit · c comment · s p a x m u · o browser · r reload · ? help · q close ";
+    " e edit · c comment · s p a l x m u · o browser · r reload · ? help · q close ";
 
 /// Width of a field's `Key:` column.
 const KEY_WIDTH: usize = 11;
@@ -197,7 +198,8 @@ fn header(out: &mut Out, card: &Card, meta: &Meta) {
     if card.labels.is_empty() {
         out.field("Labels", "none", theme::DIM);
     } else {
-        out.field("Labels", &card.labels.join(", "), theme::LABEL);
+        let names: Vec<&str> = card.labels.iter().map(|l| l.name.as_str()).collect();
+        out.field("Labels", &names.join(", "), theme::LABEL);
     }
     let closed = card.state == Some(IssueState::Closed);
     out.field(

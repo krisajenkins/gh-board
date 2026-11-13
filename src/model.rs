@@ -16,7 +16,9 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::mem::discriminant;
 
 use crate::search;
-use crate::types::{Card, Cards, Config, DetailData, IssueState, ItemId, Meta, StateReason, User};
+use crate::types::{
+    Card, Cards, Config, DetailData, IssueState, ItemId, Label, Member, Meta, StateReason, User,
+};
 
 /// What an op changes. The payload is the user's intent.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,6 +33,11 @@ pub enum OpKind {
     Assign {
         add: Vec<User>,
         remove: Vec<User>,
+    },
+    /// Add and/or remove labels.
+    Label {
+        add: Vec<Label>,
+        remove: Vec<Label>,
     },
     Comment {
         body: String,
@@ -73,6 +80,49 @@ impl OpKind {
                 | OpKind::State { .. }
                 | OpKind::Body { .. }
         )
+    }
+}
+
+/// A list fetched once per repository, when first needed: the users who can
+/// be assigned there, or its labels. Keyed by repo id.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PerRepo<T> {
+    pub loaded: BTreeMap<String, Vec<T>>,
+    pub loading: BTreeSet<String>,
+}
+
+impl<T> Default for PerRepo<T> {
+    fn default() -> Self {
+        PerRepo {
+            loaded: BTreeMap::new(),
+            loading: BTreeSet::new(),
+        }
+    }
+}
+
+impl<T> PerRepo<T> {
+    pub fn get(&self, repo_id: &str) -> Option<&[T]> {
+        self.loaded.get(repo_id).map(Vec::as_slice)
+    }
+
+    pub fn has(&self, repo_id: &str) -> bool {
+        self.loaded.contains_key(repo_id)
+    }
+
+    /// Note a fetch starting. `false` when the list is already loaded or on
+    /// its way, so there is nothing to fetch.
+    pub fn start(&mut self, repo_id: &str) -> bool {
+        !self.has(repo_id) && self.loading.insert(repo_id.into())
+    }
+
+    pub fn arrived(&mut self, repo_id: String, items: Vec<T>) {
+        self.loading.remove(&repo_id);
+        self.loaded.insert(repo_id, items);
+    }
+
+    /// A failed fetch: the next request for the list tries again.
+    pub fn failed(&mut self, repo_id: &str) {
+        self.loading.remove(repo_id);
     }
 }
 
@@ -179,9 +229,10 @@ pub struct State {
     /// Whether `config.priority` has been turned into a filter yet.
     pub priority_applied: bool,
     pub focus: Focus,
-    /// Keyed by repo id.
-    pub assignable: BTreeMap<String, Vec<User>>,
-    pub assignable_loading: BTreeSet<String>,
+    /// The users each repository's issues can be assigned to.
+    pub assignable: PerRepo<User>,
+    /// Each repository's labels.
+    pub labels: PerRepo<Label>,
     pub detail: Option<Detail>,
     pub detail_seq: u64,
     /// Op id of the failure currently being asked about.
@@ -208,8 +259,8 @@ impl State {
             show_hidden: false,
             priority_applied: false,
             focus: Focus::default(),
-            assignable: BTreeMap::new(),
-            assignable_loading: BTreeSet::new(),
+            assignable: PerRepo::default(),
+            labels: PerRepo::default(),
             detail: None,
             detail_seq: 0,
             prompting: None,
@@ -240,21 +291,25 @@ fn apply(card: &mut Card, op: &Op) {
                 IssueState::Open => Some(StateReason::Reopened),
             };
         }
-        OpKind::Assign { add, remove } => {
-            card.assignees
-                .retain(|u| !remove.iter().any(|r| r.id == u.id));
-            for u in add {
-                if !card.is_assigned(&u.id) {
-                    card.assignees.push(u.clone());
-                }
-            }
-        }
+        OpKind::Assign { add, remove } => change_set(&mut card.assignees, add, remove),
+        OpKind::Label { add, remove } => change_set(&mut card.labels, add, remove),
         OpKind::Comment { .. } | OpKind::Body { .. } | OpKind::Create { .. } => {}
     }
     if op.state == OpState::Failed {
         card.failed = true;
     } else {
         card.pending = true;
+    }
+}
+
+/// Remove then add members of a set (a card's assignees or labels), matching
+/// them by id. Adding one already there changes nothing.
+pub fn change_set<T: Member + Clone>(set: &mut Vec<T>, add: &[T], remove: &[T]) {
+    set.retain(|m| !remove.iter().any(|r| r.id() == m.id()));
+    for m in add {
+        if !set.iter().any(|x| x.id() == m.id()) {
+            set.push(m.clone());
+        }
     }
 }
 

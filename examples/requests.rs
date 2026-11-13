@@ -16,6 +16,10 @@ fn main() {
             "assignable",
             queries::assignable("gh-board-schema-check-no-such-org/repo"),
         ),
+        (
+            "labels",
+            queries::labels("gh-board-schema-check-no-such-org/repo"),
+        ),
         ("item", queries::item(ID, "Status")),
         (
             "set_status",
@@ -43,6 +47,9 @@ fn main() {
         ("assign_add", queries::set_assignees(ID, &[ID], &[])),
         ("assign_remove", queries::set_assignees(ID, &[], &[ID])),
         ("assign_both", queries::set_assignees(ID, &[ID], &[ID])),
+        ("label_add", queries::set_labels(ID, &[ID], &[])),
+        ("label_remove", queries::set_labels(ID, &[], &[ID])),
+        ("label_both", queries::set_labels(ID, &[ID], &[ID])),
         ("comment", queries::comment(ID, "schema check")),
         ("set_body", queries::set_body(ID, "schema check")),
         (

@@ -98,6 +98,109 @@ fn loading_prefetches_each_repositorys_assignable_users_once() {
 }
 
 #[test]
+fn labels_are_fetched_per_repository_on_demand_once() {
+    let s = loaded();
+    assert!(s.labels.get("r-plans").is_none(), "not prefetched");
+    let load = || Msg::LoadLabels {
+        repo_id: "r-plans".into(),
+        repo: "acme/plans".into(),
+    };
+    let (s, fx) = update(s, load());
+    assert_eq!(
+        fx,
+        vec![Effect::FetchLabels {
+            repo_id: "r-plans".into(),
+            repo: "acme/plans".into()
+        }]
+    );
+    let (s, fx) = update(s, load());
+    assert!(fx.is_empty(), "already on its way");
+
+    let (s, fx) = update(
+        s,
+        Msg::LabelsFailed {
+            repo_id: "r-plans".into(),
+            err: "rate limited".into(),
+        },
+    );
+    assert_eq!(notifications(&fx), ["Loading labels failed: rate limited"]);
+    let (s, fx) = update(s, load());
+    assert_eq!(fx.len(), 1, "a failure can be retried");
+
+    let s = with_labels(s);
+    let names: Vec<_> = s
+        .labels
+        .get("r-plans")
+        .unwrap()
+        .iter()
+        .map(|l| l.name.as_str())
+        .collect();
+    assert_eq!(
+        names,
+        ["blog", "Bug", "docs", "good first issue"],
+        "sorted, ignoring case"
+    );
+    let (_, fx) = update(s, load());
+    assert!(fx.is_empty(), "already loaded");
+}
+
+#[test]
+fn toggling_a_label_adds_or_removes_it_at_once_and_confirms() {
+    // #3 has "blog"; #1 has nothing.
+    let toggle = |n: u64, name: &str| Msg::ToggleLabel {
+        item_id: format!("item{n}"),
+        label: label(name),
+    };
+    let (s, fx) = update(loaded(), toggle(3, "blog"));
+    let op = mutations(&fx)[0].clone();
+    assert_eq!(
+        op.kind,
+        OpKind::Label {
+            add: vec![],
+            remove: vec![label("blog")]
+        }
+    );
+    assert_eq!(op.desc, "Label #3 -blog");
+    assert!(get(&s, 3).labels.is_empty());
+    assert!(get(&s, 3).pending);
+
+    let (s, fx) = update(s, toggle(1, "bug"));
+    let add = mutations(&fx)[0].clone();
+    assert_eq!(add.desc, "Label #1 +bug");
+    assert_eq!(get(&s, 1).labels, [label("bug")]);
+
+    // GitHub answers with the issue's fields; the item id and status stay.
+    let s = step(
+        s,
+        ok_card(
+            op.id,
+            Card {
+                item_id: String::new(),
+                status_id: None,
+                labels: vec![],
+                ..items().cards["item3"].clone()
+            },
+        ),
+    );
+    let c = &s.base.cards["item3"];
+    assert!(c.labels.is_empty());
+    assert_eq!(c.status_id.as_deref(), Some("s-todo"));
+    assert!(!get(&s, 3).pending);
+
+    // Abandoning a failed one puts the label back as GitHub has it.
+    let s = step(
+        s,
+        Msg::OpFailed {
+            op_id: add.id,
+            err: "nope".into(),
+        },
+    );
+    assert!(get(&s, 1).failed);
+    let s = step(s, Msg::OpAbandon { op_id: add.id });
+    assert_eq!(get(&s, 1), items().cards["item1"]);
+}
+
+#[test]
 fn a_stale_board_response_is_ignored() {
     let s = step(State::new(config()), Msg::Refresh);
     let stale = s.seq;

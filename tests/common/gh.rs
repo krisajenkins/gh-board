@@ -46,7 +46,7 @@ pub fn issue(c: &Card, priority_field_id: &str) -> Value {
         "stateReason": c.state_reason.map(reason_name),
         "repository": c.repo_id.as_ref().map(|id| json!({ "id": id, "nameWithOwner": c.repo })),
         "assignees": { "nodes": c.assignees.iter().map(|u| json!({ "id": u.id, "login": u.login })).collect::<Vec<_>>() },
-        "labels": { "nodes": c.labels.iter().map(|l| json!({ "name": l })).collect::<Vec<_>>() },
+        "labels": { "nodes": c.labels.iter().map(|l| json!({ "id": l.id, "name": l.name })).collect::<Vec<_>>() },
         "issueFieldValues": { "nodes": values },
     })
 }

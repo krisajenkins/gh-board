@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use crate::model::OpKind;
 use crate::types::{
-    Board, Card, Cards, Comment, Config, DetailData, Field, FieldOption, IssueState, Meta,
+    Board, Card, Cards, Comment, Config, DetailData, Field, FieldOption, IssueState, Label, Meta,
     StateReason, User,
 };
 use crate::update::MutationResult;
@@ -77,7 +77,17 @@ struct RawRepo {
 
 #[derive(Deserialize)]
 struct RawLabel {
+    id: String,
     name: String,
+}
+
+impl From<RawLabel> for Label {
+    fn from(l: RawLabel) -> Self {
+        Label {
+            id: l.id,
+            name: l.name,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -257,7 +267,7 @@ fn card_from_issue(raw: RawIssue, priority_field_id: Option<&str>) -> Card {
         repo: raw.repository.map(|r| r.name_with_owner),
         priority_id,
         assignees: raw.assignees.into_iter().map(User::from).collect(),
-        labels: raw.labels.into_iter().map(|l| l.name).collect(),
+        labels: raw.labels.into_iter().map(Label::from).collect(),
         ..Card::default()
     }
 }
@@ -389,16 +399,34 @@ pub fn detail(data: &Value) -> Result<DetailData> {
     })
 }
 
+/// A list on a repository (`queries::on_repo`), sorted ignoring case by
+/// `key`. A missing list is empty; a missing repository is an error.
+fn repo_list<R, T>(
+    data: &Value,
+    field: &str,
+    what: &str,
+    key: impl Fn(&T) -> &str,
+) -> Result<Vec<T>>
+where
+    R: DeserializeOwned,
+    T: From<R>,
+{
+    let repo = at(data, &["repository"]).ok_or("repository not found")?;
+    let nodes = at(repo, &[field]).map_or(Ok(Nodes::default()), |n| parse::<Nodes<R>>(n, what))?;
+    let mut out: Vec<T> = nodes.into_iter().map(T::from).collect();
+    out.sort_by_cached_key(|x| key(x).to_lowercase());
+    Ok(out)
+}
+
 /// The users who may be assigned issues in a repository, sorted by login
 /// ignoring case.
 pub fn assignable(data: &Value) -> Result<Vec<User>> {
-    let repo = at(data, &["repository"]).ok_or("repository not found")?;
-    let users = at(repo, &["assignableUsers"]).map_or(Ok(Nodes::default()), |u| {
-        parse::<Nodes<RawUser>>(u, "assignable users")
-    })?;
-    let mut users: Vec<User> = users.into_iter().map(User::from).collect();
-    users.sort_by_cached_key(|u| u.login.to_lowercase());
-    Ok(users)
+    repo_list::<RawUser, User>(data, "assignableUsers", "assignable users", |u| &u.login)
+}
+
+/// A repository's labels, sorted by name ignoring case.
+pub fn labels(data: &Value) -> Result<Vec<Label>> {
+    repo_list::<RawLabel, Label>(data, "labels", "labels", |l| &l.name)
 }
 
 /// The issue created by `createIssue`: its id and link.
@@ -435,12 +463,20 @@ pub fn item_reread(data: &Value, priority_field_id: Option<&str>) -> Result<Opti
     }
 }
 
+/// The issue in a `queries::change_set` response: from `added` if it ran
+/// (it runs last), otherwise `removed`.
+fn set_changed<'a>(data: &'a Value, subject: &str) -> Result<&'a Value> {
+    at(data, &["added", subject])
+        .or_else(|| at(data, &["removed", subject]))
+        .ok_or_else(|| "no issue in response".into())
+}
+
 /// Decode a successful mutation for an op of the given kind.
 ///
 /// - status: a full card (`CardItem`).
 /// - create: a full card, from the response to its last step: setting the
 ///   status, or adding it to the project when it has no status.
-/// - priority, assign, state: issue fields (`CardIssue`; no item id or status).
+/// - priority, assign, label, state: issue fields (`CardIssue`; no item id or status).
 /// - comment: the comment.
 /// - body: the new description.
 pub fn mutation(
@@ -476,11 +512,8 @@ pub fn mutation(
         ),
         // Root mutation fields run in order, so whichever of the two ran last
         // has the issue with both changes.
-        OpKind::Assign { .. } => issue_card(
-            at(data, &["added", "assignable"])
-                .or_else(|| at(data, &["removed", "assignable"]))
-                .ok_or("no issue in response")?,
-        ),
+        OpKind::Assign { .. } => issue_card(set_changed(data, "assignable")?),
+        OpKind::Label { .. } => issue_card(set_changed(data, "labelable")?),
         OpKind::Body { .. } => {
             let issue = node(&["updateIssue", "issue"], "no issue in response")?;
             let body = issue

@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use common::*;
 use gh_board::model::{OpKind, OpState, State, board, view};
-use gh_board::types::{Card, IssueState, ItemId, StateReason, User};
+use gh_board::types::{Card, IssueState, ItemId, Label, StateReason, User};
 use gh_board::update::{Direction, Effect, Msg, MutationResult, Towards, update};
 use proptest::prelude::*;
 
@@ -17,11 +17,16 @@ fn users() -> Vec<User> {
     vec![user("u-amy", "amy"), user("u-bob", "bob"), me()]
 }
 
+fn repo_labels() -> Vec<Label> {
+    vec![label("bug"), label("docs"), label("blog")]
+}
+
 #[derive(Clone, Debug)]
 enum Action {
     SetPriority(u64, Option<usize>),
     SetStatus(u64, usize),
     ToggleAssignee(u64, usize),
+    ToggleLabel(u64, usize),
     /// Reopen (`None`), or close for `CLOSE_AS[i]`.
     SetState(u64, Option<usize>),
     Focus(Direction),
@@ -43,6 +48,7 @@ fn intent() -> impl Strategy<Value = Action> {
             .prop_map(|(c, p)| Action::SetPriority(c, p)),
         (card.clone(), 0..STATUSES.len()).prop_map(|(c, s)| Action::SetStatus(c, s)),
         (card.clone(), 0..3usize).prop_map(|(c, u)| Action::ToggleAssignee(c, u)),
+        (card.clone(), 0..3usize).prop_map(|(c, l)| Action::ToggleLabel(c, l)),
         (card, prop::option::of(0..CLOSE_AS.len())).prop_map(|(c, r)| Action::SetState(c, r)),
     ]
 }
@@ -171,6 +177,14 @@ impl Sim {
                     }
                 }
             }
+            OpKind::Label { add, remove } => {
+                card.labels.retain(|l| !remove.contains(l));
+                for l in add {
+                    if !card.labels.contains(l) {
+                        card.labels.push(l.clone());
+                    }
+                }
+            }
             OpKind::State {
                 issue_state,
                 state_reason,
@@ -210,6 +224,10 @@ impl Sim {
             Action::ToggleAssignee(n, u) => self.send(Msg::ToggleAssignee {
                 item_id: item(*n),
                 user: users()[*u].clone(),
+            }),
+            Action::ToggleLabel(n, l) => self.send(Msg::ToggleLabel {
+                item_id: item(*n),
+                label: repo_labels()[*l].clone(),
             }),
             Action::SetState(n, None) => self.send(Msg::SetState {
                 item_id: item(*n),
@@ -316,6 +334,7 @@ type Essence = (
     Option<String>,
     Option<String>,
     Vec<String>,
+    Vec<String>,
     Option<IssueState>,
     Option<StateReason>,
 );
@@ -326,6 +345,7 @@ fn essence(c: &Card) -> Essence {
         c.status_id.clone(),
         c.priority_id.clone(),
         c.assignees.iter().map(|u| u.login.clone()).collect(),
+        c.labels.iter().map(|l| l.name.clone()).collect(),
         c.state,
         c.state_reason,
     )
@@ -368,6 +388,15 @@ proptest! {
                         card.assignees.retain(|x| x != user);
                     } else {
                         card.assignees.push(user.clone());
+                    }
+                }
+                Action::ToggleLabel(n, l) => {
+                    let card = intent.get_mut(&format!("item{n}")).unwrap();
+                    let label = &repo_labels()[*l];
+                    if card.labels.contains(label) {
+                        card.labels.retain(|x| x != label);
+                    } else {
+                        card.labels.push(label.clone());
                     }
                 }
                 Action::SetState(n, r) => {

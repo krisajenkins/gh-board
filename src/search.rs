@@ -70,7 +70,7 @@ pub fn fields(card: &Card, priority_name: Option<&str>) -> Vec<String> {
     let mut out = vec![card.title.clone()];
     out.extend(card.number.map(|n| format!("#{n}")));
     out.extend(card.assignees.iter().map(|u| format!("@{}", u.login)));
-    out.extend(card.labels.iter().cloned());
+    out.extend(card.labels.iter().map(|l| l.name.clone()));
     out.extend(priority_name.map(str::to_string));
     out
 }

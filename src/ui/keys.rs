@@ -3,8 +3,8 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::model::{State, board, op_counts};
-use crate::types::IssueState;
+use crate::model::{PerRepo, State, board, op_counts};
+use crate::types::{Card, IssueState};
 use crate::ui::detail;
 use crate::ui::editor::{Edit, EditKind};
 use crate::ui::picker::{Pick, Picker, PickerKind, initial_cursor, menu};
@@ -379,24 +379,21 @@ fn detail_key(ui: UiState, state: &State, key: KeyEvent) -> (UiState, Outcome) {
             }),
         ),
         KeyCode::Char('x') => (open(ui, PickerKind::Close), Outcome::default()),
-        KeyCode::Char('a') => {
-            let load = match (&card.repo_id, &card.repo) {
-                (Some(repo_id), Some(repo)) if !state.assignable.contains_key(repo_id) => {
-                    vec![Msg::LoadAssignable {
-                        repo_id: repo_id.clone(),
-                        repo: repo.clone(),
-                    }]
-                }
-                _ => vec![],
-            };
-            (
-                open(ui, PickerKind::Assignee),
-                Outcome {
-                    msgs: load,
-                    actions: vec![],
-                },
-            )
-        }
+        // The multiselects, fetching the card's repository's list to pick
+        // from if it is not here yet.
+        KeyCode::Char('a') => (
+            open(ui, PickerKind::Assignee),
+            load_for(&card, &state.assignable, |repo_id, repo| {
+                Msg::LoadAssignable { repo_id, repo }
+            }),
+        ),
+        KeyCode::Char('l') => (
+            open(ui, PickerKind::Label),
+            load_for(&card, &state.labels, |repo_id, repo| Msg::LoadLabels {
+                repo_id,
+                repo,
+            }),
+        ),
         KeyCode::Char('c') => (
             ui,
             edit(
@@ -430,6 +427,17 @@ fn detail_key(ui: UiState, state: &State, key: KeyEvent) -> (UiState, Outcome) {
             }
         }
         _ => (ui, Outcome::default()),
+    }
+}
+
+/// `load(repo_id, repo)` for the card's repository, unless its list is
+/// already loaded.
+fn load_for<T>(card: &Card, list: &PerRepo<T>, load: impl Fn(String, String) -> Msg) -> Outcome {
+    match (&card.repo_id, &card.repo) {
+        (Some(repo_id), Some(repo)) if !list.has(repo_id) => {
+            Outcome::msg(load(repo_id.clone(), repo.clone()))
+        }
+        _ => Outcome::default(),
     }
 }
 

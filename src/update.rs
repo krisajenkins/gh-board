@@ -13,7 +13,7 @@ use crate::model::{
     self, ColumnKey, Detail, Filter, Focus, Op, OpKind, OpState, State, board, focus_at, view,
 };
 use crate::types::{
-    Board, Card, Cards, Comment, DetailData, IssueState, ItemId, Meta, StateReason, User,
+    Board, Card, Cards, Comment, DetailData, IssueState, ItemId, Label, Meta, StateReason, User,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,7 +42,7 @@ pub enum Towards {
 /// A successful mutation's payload, decoded for the op's kind.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MutationResult {
-    /// status, create: the whole card. priority, assign, state: the issue's
+    /// status, create: the whole card. priority, assign, label, state: the issue's
     /// fields (its item id and status are kept from the cached card).
     Card(Card),
     Comment(Comment),
@@ -80,6 +80,18 @@ pub enum Msg {
         repo_id: String,
         repo: String,
     },
+    LabelsLoaded {
+        repo_id: String,
+        labels: Vec<Label>,
+    },
+    LabelsFailed {
+        repo_id: String,
+        err: String,
+    },
+    LoadLabels {
+        repo_id: String,
+        repo: String,
+    },
     // View
     /// `0` shows everything, `1..=n` the n priority options in field order,
     /// and `n+1` the cards with no priority.
@@ -106,6 +118,11 @@ pub enum Msg {
     },
     UnassignAll {
         item_id: ItemId,
+    },
+    /// Add the label if the card lacks it, otherwise remove it.
+    ToggleLabel {
+        item_id: ItemId,
+        label: Label,
     },
     SetState {
         item_id: ItemId,
@@ -206,6 +223,10 @@ pub enum Effect {
         repo_id: String,
         repo: String,
     },
+    FetchLabels {
+        repo_id: String,
+        repo: String,
+    },
     /// Re-read one card, after `delay_ms` if set. `rev` goes back in `ItemLoaded`.
     FetchItem {
         item_id: ItemId,
@@ -257,12 +278,11 @@ fn handle(s: &mut State, msg: Msg, fx: &mut Fx) {
             }
         }
         Msg::AssignableLoaded { repo_id, mut users } => {
-            s.assignable_loading.remove(&repo_id);
             users.sort_by_cached_key(|u| u.login.to_lowercase());
-            s.assignable.insert(repo_id, users);
+            s.assignable.arrived(repo_id, users);
         }
         Msg::AssignableFailed { repo_id, err } => {
-            s.assignable_loading.remove(&repo_id);
+            s.assignable.failed(&repo_id);
             notify(
                 fx,
                 Level::Warn,
@@ -270,8 +290,24 @@ fn handle(s: &mut State, msg: Msg, fx: &mut Fx) {
             );
         }
         Msg::LoadAssignable { repo_id, repo } => {
-            if s.assignable_loading.insert(repo_id.clone()) {
+            if s.assignable.start(&repo_id) {
                 fx.push(Effect::FetchAssignable { repo_id, repo });
+            }
+        }
+        Msg::LabelsLoaded {
+            repo_id,
+            mut labels,
+        } => {
+            labels.sort_by_cached_key(|l| l.name.to_lowercase());
+            s.labels.arrived(repo_id, labels);
+        }
+        Msg::LabelsFailed { repo_id, err } => {
+            s.labels.failed(&repo_id);
+            notify(fx, Level::Warn, format!("Loading labels failed: {err}"));
+        }
+        Msg::LoadLabels { repo_id, repo } => {
+            if s.labels.start(&repo_id) {
+                fx.push(Effect::FetchLabels { repo_id, repo });
             }
         }
         Msg::FilterKey(n) => filter_key(s, n),
@@ -288,11 +324,14 @@ fn handle(s: &mut State, msg: Msg, fx: &mut Fx) {
             if let Some(card) = actionable(s, fx, Some(&item_id)) {
                 // The name is for pickers; it is not part of an assignment.
                 let user = User { name: None, ..user };
-                if card.is_assigned(&user.id) {
-                    assign(s, fx, &card, vec![], vec![user]);
-                } else {
-                    assign(s, fx, &card, vec![user], vec![]);
-                }
+                let (add, remove) = toggle(card.is_assigned(&user.id), user);
+                assign(s, fx, &card, add, remove);
+            }
+        }
+        Msg::ToggleLabel { item_id, label } => {
+            if let Some(card) = actionable(s, fx, Some(&item_id)) {
+                let (add, remove) = toggle(card.has_label(&label.id), label);
+                change_labels(s, fx, &card, add, remove);
             }
         }
         Msg::AssignMe { item_id } => assign_me(s, fx, &item_id),
@@ -598,7 +637,7 @@ fn board_page(s: &mut State, fx: &mut Fx, seq: u64, board: Board, last: bool) {
     s.meta = Some(meta);
 
     for (repo_id, repo) in repos {
-        if !s.assignable.contains_key(&repo_id) && s.assignable_loading.insert(repo_id.clone()) {
+        if s.assignable.start(&repo_id) {
             fx.push(Effect::FetchAssignable { repo_id, repo });
         }
     }
@@ -774,16 +813,35 @@ fn set_priority(s: &mut State, fx: &mut Fx, item_id: &str, priority_id: Option<S
     );
 }
 
-fn assign(s: &mut State, fx: &mut Fx, card: &Card, add: Vec<User>, remove: Vec<User>) {
+/// Toggling a member of a set: `(add, remove)`, one of them holding it.
+fn toggle<T>(present: bool, member: T) -> (Vec<T>, Vec<T>) {
+    if present {
+        (vec![], vec![member])
+    } else {
+        (vec![member], vec![])
+    }
+}
+
+/// Enqueue a change to one of a card's sets (assignees, labels), described
+/// as `<verb> #3 +added -removed`. Nothing happens when it changes nothing.
+fn enqueue_set_change<T>(
+    s: &mut State,
+    fx: &mut Fx,
+    card: &Card,
+    verb: &str,
+    (add, remove): (Vec<T>, Vec<T>),
+    name: impl Fn(&T) -> String,
+    kind: impl FnOnce(Vec<T>, Vec<T>) -> OpKind,
+) {
     if add.is_empty() && remove.is_empty() {
         return;
     }
     let words: Vec<String> = add
         .iter()
-        .map(|u| format!("+@{}", u.login))
-        .chain(remove.iter().map(|u| format!("-@{}", u.login)))
+        .map(|m| format!("+{}", name(m)))
+        .chain(remove.iter().map(|m| format!("-{}", name(m))))
         .collect();
-    let desc = format!("Assign {} {}", card.label(), words.join(" "));
+    let desc = format!("{verb} {} {}", card.label(), words.join(" "));
     enqueue(
         s,
         fx,
@@ -791,8 +849,32 @@ fn assign(s: &mut State, fx: &mut Fx, card: &Card, add: Vec<User>, remove: Vec<U
             card.item_id.clone(),
             card.issue_id.clone(),
             desc,
-            OpKind::Assign { add, remove },
+            kind(add, remove),
         ),
+    );
+}
+
+fn assign(s: &mut State, fx: &mut Fx, card: &Card, add: Vec<User>, remove: Vec<User>) {
+    enqueue_set_change(
+        s,
+        fx,
+        card,
+        "Assign",
+        (add, remove),
+        |u| format!("@{}", u.login),
+        |add, remove| OpKind::Assign { add, remove },
+    );
+}
+
+fn change_labels(s: &mut State, fx: &mut Fx, card: &Card, add: Vec<Label>, remove: Vec<Label>) {
+    enqueue_set_change(
+        s,
+        fx,
+        card,
+        "Label",
+        (add, remove),
+        |l| l.name.clone(),
+        |add, remove| OpKind::Label { add, remove },
     );
 }
 
@@ -1053,7 +1135,10 @@ fn op_ok(s: &mut State, fx: &mut Fx, op_id: u64, result: Result<MutationResult, 
             true
         }
         (
-            OpKind::Priority { .. } | OpKind::Assign { .. } | OpKind::State { .. },
+            OpKind::Priority { .. }
+            | OpKind::Assign { .. }
+            | OpKind::Label { .. }
+            | OpKind::State { .. },
             Ok(MutationResult::Card(card)),
         ) => {
             if let Some(old) = s.base.cards.get(&op.item_id) {

@@ -122,6 +122,7 @@ GitHub confirms it or `!` if it failed.
 | `s` / `p`       | Status / priority picker (priority has a "None").             |
 | `a`             | Assignee picker, "Assign to me" first; type to filter.        |
 | `m` / `u`       | Assign me / unassign everyone.                                |
+| `l`             | Label picker: the repository's labels; type to filter.        |
 | `x`             | Close (Completed / Not planned / Duplicate of…), or reopen a closed issue. |
 | `<` `>` `!`     | As on the board.                                              |
 | `o`             | Open in the browser.                                          |
@@ -131,13 +132,15 @@ GitHub confirms it or `!` if it failed.
 | `q` `Esc`       | Close the detail view.                                        |
 
 Pickers: `j`/`k` or arrows to move, `Enter` to pick, `Esc` to cancel; the
-current value is marked `●`, assigned users `✓`.
+current value is marked `●`, assigned users and the card's labels `✓`.
 
-In the assignee picker, typing filters the users fuzzily, as the board's `/`
-search does (`jdt` finds `@jdetter`; `me` finds "Assign to me"), so letters
-type rather than move: use the arrows or `Ctrl-n` / `Ctrl-p` to move,
-`Backspace` / `Ctrl-w` / `Ctrl-u` to widen the filter, `Enter` to toggle the
-user under the cursor, and `Esc` to close.
+In the assignee and label pickers, typing filters fuzzily, as the board's `/`
+search does (`jdt` finds `@jdetter`; `me` finds "Assign to me"; `gfi` finds
+"good first issue"), so letters type rather than move: use the arrows or
+`Ctrl-n` / `Ctrl-p` to move, `Backspace` / `Ctrl-w` / `Ctrl-u` to widen the
+filter, `Enter` to add or remove the user or label under the cursor, and `Esc`
+to close. Labels belong to a repository, so the label picker offers those of
+the card's own repository.
 
 "Duplicate of…" in the close picker opens a second picker listing the
 board's other issues (hidden columns included), filtered by typing as the `/`

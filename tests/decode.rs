@@ -5,7 +5,7 @@ mod common;
 use common::*;
 use gh_board::decode;
 use gh_board::model::OpKind;
-use gh_board::types::{Card, Comment, IssueState, StateReason, User};
+use gh_board::types::{Card, Comment, IssueState, Label, StateReason, User};
 use gh_board::update::MutationResult;
 use proptest::prelude::*;
 use serde_json::{Value, json};
@@ -92,10 +92,10 @@ fn a_missing_project_or_status_field_is_an_error() {
 fn null_connections_and_nodes_are_tolerated() {
     let mut node = gh::issue(&card(1), PF);
     node["assignees"] = Value::Null;
-    node["labels"] = json!({ "nodes": [null, { "name": "x" }] });
+    node["labels"] = json!({ "nodes": [null, { "id": "l-x", "name": "x" }] });
     let c = decode::issue(&node, Some(PF)).unwrap();
     assert!(c.assignees.is_empty());
-    assert_eq!(c.labels, vec!["x"]);
+    assert_eq!(c.labels, vec![label("x")]);
 }
 
 #[test]
@@ -153,6 +153,41 @@ fn an_assign_response_is_read_from_the_mutation_that_ran_last() {
 }
 
 #[test]
+fn a_label_response_is_read_from_the_mutation_that_ran_last() {
+    let kind = OpKind::Label {
+        add: vec![],
+        remove: vec![],
+    };
+    let after = Card {
+        labels: vec![label("bug")],
+        ..card(1)
+    };
+    let data = json!({
+        "removed": { "labelable": gh::issue(&card(1), PF) },
+        "added": { "labelable": gh::issue(&after, PF) },
+    });
+    let Ok(MutationResult::Card(c)) = decode::mutation(&kind, &data, Some(PF)) else {
+        panic!()
+    };
+    assert_eq!(c.labels, after.labels);
+    // Only a removal: read from that.
+    let data = json!({ "removed": { "labelable": gh::issue(&card(1), PF) } });
+    let Ok(MutationResult::Card(c)) = decode::mutation(&kind, &data, Some(PF)) else {
+        panic!()
+    };
+    assert!(c.labels.is_empty());
+    assert_eq!(
+        decode::mutation(
+            &kind,
+            &json!({ "added": { "assignable": gh::issue(&after, PF) } }),
+            Some(PF)
+        ),
+        Err("no issue in response".into()),
+        "the assignee payload is not a label payload"
+    );
+}
+
+#[test]
 fn a_status_response_is_a_whole_card() {
     let kind = OpKind::Status {
         status_id: "s-prog".into(),
@@ -196,6 +231,36 @@ fn body_and_comment_responses() {
             body: "hi".into(),
             created_at: "2026-01-02T00:00:00Z".into(),
         }))
+    );
+}
+
+#[test]
+fn repository_labels_are_sorted_case_insensitively() {
+    let data = json!({ "repository": { "labels": { "nodes": [
+        { "id": "L_d", "name": "docs" },
+        null,
+        { "id": "L_b", "name": "Bug" },
+    ] } } });
+    assert_eq!(
+        decode::labels(&data),
+        Ok(vec![
+            Label {
+                id: "L_b".into(),
+                name: "Bug".into()
+            },
+            Label {
+                id: "L_d".into(),
+                name: "docs".into()
+            },
+        ])
+    );
+    assert_eq!(
+        decode::labels(&json!({ "repository": { "labels": null } })),
+        Ok(vec![])
+    );
+    assert_eq!(
+        decode::labels(&json!({ "repository": null })),
+        Err("repository not found".into())
     );
 }
 
@@ -297,7 +362,7 @@ prop_compose! {
         status_id in opt_id("s"),
         priority_id in opt_id("p"),
         assignees in prop::collection::vec(("U[0-9]{1,4}", "[a-zA-Z0-9-]{1,12}"), 0..4),
-        labels in prop::collection::vec(".{0,12}", 0..4),
+        labels in prop::collection::vec(("L[0-9]{1,4}", ".{0,12}"), 0..4),
     ) -> Card {
         Card {
             item_id: format!("item{n}"),
@@ -312,7 +377,7 @@ prop_compose! {
             status_id,
             priority_id,
             assignees: assignees.into_iter().map(|(id, login)| User { id, login, name: None }).collect(),
-            labels,
+            labels: labels.into_iter().map(|(id, name)| Label { id, name }).collect(),
             ..Card::default()
         }
     }
@@ -332,6 +397,7 @@ proptest! {
         let _ = decode::board(std::slice::from_ref(&v), &config());
         let _ = decode::detail(&v);
         let _ = decode::assignable(&v);
+        let _ = decode::labels(&v);
         let _ = decode::mutation(&OpKind::Status { status_id: "s".into() }, &v, Some(PF));
     }
 }

@@ -28,7 +28,7 @@ expression: t.backend()
 "  │ Line 23 of the plan.                                                                         │  "
 "  │ Line 24 of the plan.                                                                         │  "
 "  │ Line 25 of the plan.                                                                         │  "
-"  ╰ e edit · c comment · s p a x m u · o browser · r reload · ? help · q close ──────── 13-36/93 ╯  "
+"  ╰ e edit · c comment · s p a l x m u · o browser · r reload · ? help · q close ────── 13-36/93 ╯  "
 "                                                                                                    "
 "                                                                                                    "
 " Plans  Priority: All (1-4 · 0 all · 5 none) │ Done hidden                               →2  ? help "
