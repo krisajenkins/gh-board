@@ -7,6 +7,8 @@ edit, with every change shown immediately and confirmed in the background.
 Written in Rust with [ratatui](https://ratatui.rs); it talks to GitHub through
 the [`gh`](https://cli.github.com) CLI, so it never handles a token itself.
 
+![gh-board showing the Rust lang team's features project: four status columns of issue cards with numbers, titles, assignees and labels, and a status line along the bottom](screenshot.png)
+
 > **Status: early.** It works day to day (the board, filters, search, a card
 > detail view, pickers and editing in `$EDITOR`), but keys and options may
 > still change. Only organization-owned projects are supported. Press `F` in
