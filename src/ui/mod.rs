@@ -6,6 +6,7 @@
 //! &UiState)` onto a frame.
 
 pub mod card;
+pub mod context;
 pub mod detail;
 pub mod editor;
 pub mod keys;

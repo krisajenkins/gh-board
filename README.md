@@ -87,6 +87,7 @@ column's cards are above `↑` and below `↓`.
 | `Enter`         | Open the card's detail view.                                  |
 | `o`             | Open the card in the browser.                                 |
 | `y`             | Copy the card's URL to the clipboard.                         |
+| `Y`             | Copy agent context for the card: Markdown describing the project and the card, telling an agent with `gh` to act on it. Paste it into `claude` and ask, say, "Can you research this?". |
 | `?`             | Key help.                                                     |
 | `q` `Ctrl-c`    | Quit. Nothing is saved. If changes are still being sent, asks first. |
 
@@ -127,6 +128,7 @@ GitHub confirms it or `!` if it failed.
 | `<` `>` `!`     | As on the board.                                              |
 | `o`             | Open in the browser.                                          |
 | `y`             | Copy the URL to the clipboard.                                |
+| `Y`             | Copy agent context, as on the board, plus the description and loaded comments. |
 | `r`             | Reload.                                                       |
 | `F`             | Send feedback about gh-board itself (as on the board).        |
 | `q` `Esc`       | Close the detail view.                                        |

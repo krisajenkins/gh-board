@@ -1,0 +1,26 @@
+---
+source: tests/ui_keys.rs
+expression: text
+---
+You are helping manage a GitHub project. The `gh` CLI is installed and logged in with access to it. Act on the card below as asked: for example, research it and add your notes as a comment (`gh issue comment`), or update its fields (`gh issue edit`, `gh project item-edit`). Use `gh` for every change, and keep to this card unless asked otherwise.
+
+## Project
+
+- Owner: acme
+- Project: 1 (Plans)
+- URL: https://github.com/orgs/acme/projects/1
+- Project ID: proj
+- New issues go into: acme/plans
+- Columns (the project's "Status" field): Todo, Blocked, In Progress, Ready, Done
+- Priorities (the org-level issue field "Priority", set on the issue): Urgent, High, Medium, Low
+
+## Card: #3 Card 3
+
+- URL: https://github.com/acme/plans/issues/3
+- Repo: acme/plans
+- Project item ID: item3
+- State: Open
+- Status: Todo
+- Priority: none
+- Assignees: @amy
+- Labels: blog

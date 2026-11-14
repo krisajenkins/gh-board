@@ -41,6 +41,8 @@ src/ui/         the UI's pure parts (no terminal, no clock: `now` is passed in):
   picker.rs     Picker (kind, item, cursor) -> menu(): choices derived from
                 the live state each frame, each carrying its Msg
   editor.rs     $VISUAL/$EDITOR/vi command; decide(edit, success, text) -> Msg
+  context.rs    agent_context(&State, &Card): the Markdown `Y` copies (project,
+                card, and the description and comments when the detail is open)
   card.rs       a card's content lines, height and border style
   layout.rs     column widths, sideways scroll, scroll-to-focused-card
   text.rs       display-width fitting (unicode-width), word split, wrap

@@ -560,3 +560,56 @@ fn moving_right_past_the_edge_scrolls_columns() {
     let (ui, s, _) = press(UiState::default(), s, &[ch('l'), ch('l')]);
     assert_eq!(ui.settle(&s, area).scroll.first_col, 1);
 }
+
+// Agent context (`Y`) ---------------------------------------------------------
+
+/// The text and notice name of a `Copy`, or a panic.
+fn copied(out: Outcome) -> (String, String) {
+    match out.actions.as_slice() {
+        [Action::Copy { text, what }] if out.msgs.is_empty() => (text.clone(), what.clone()),
+        other => panic!("expected one Copy, got {other:?}"),
+    }
+}
+
+#[test]
+fn shift_y_copies_agent_context_for_the_focused_card() {
+    let s = step(loaded(), Msg::Focus(Direction::Down));
+    let (text, what) = copied(handle_key(&UiState::default(), &s, ch('Y')).1);
+    assert_eq!(what, "Agent context for #3");
+    assert_eq!(text, gh_board::ui::context::agent_context(&s, &card3(&s)));
+    insta::assert_snapshot!("agent_context_board", text);
+}
+
+fn card3(s: &State) -> gh_board::types::Card {
+    gh_board::model::view(s).cards["item3"].clone()
+}
+
+#[test]
+fn shift_y_does_nothing_without_a_board() {
+    let s = step(State::new(config()), Msg::Refresh);
+    assert_eq!(
+        handle_key(&UiState::default(), &s, ch('Y')).1,
+        Outcome::default()
+    );
+}
+
+#[test]
+fn agent_context_for_a_draft_has_no_link_or_repo() {
+    let draft = gh_board::types::Card {
+        item_id: "item9".into(),
+        title: "An idea".into(),
+        ..gh_board::types::Card::default()
+    };
+    let s = loaded_with(config(), cards([draft]));
+    let (text, what) = copied(handle_key(&UiState::default(), &s, ch('Y')).1);
+    assert_eq!(what, "Agent context for “An idea”");
+    assert!(text.contains("## Card: An idea\n"), "{text}");
+    assert!(text.contains("- A draft: it has no issue yet"), "{text}");
+    assert!(text.contains("- Status: No Status"), "{text}");
+    assert!(
+        !text.contains("- URL: https://github.com/acme/plans"),
+        "{text}"
+    );
+    assert!(!text.contains("- Repo:"), "{text}");
+    assert!(!text.contains("New issues go into"), "{text}");
+}

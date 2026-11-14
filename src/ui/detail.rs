@@ -27,6 +27,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("!", "review failed changes"),
     ("o", "open in the browser"),
     ("y", "copy the URL"),
+    ("Y", "copy agent context, with description and comments"),
     ("r", "reload"),
     ("F", "feedback on gh-board (title, then $EDITOR)"),
     ("?", "this help"),

@@ -1023,3 +1023,35 @@ fn detail_help() {
     let (ui, s, _, _) = press(UiState::default(), detail_open(), &[ch('?')]);
     assert_snapshot!(draw(&s, &ui).backend());
 }
+
+// Agent context (`Y`) ---------------------------------------------------------
+
+#[test]
+fn shift_y_in_the_detail_copies_the_card_with_its_description_and_comments() {
+    let out = on_detail(ch('Y'));
+    let [Action::Copy { text, what }] = out.actions.as_slice() else {
+        panic!("expected one Copy, got {out:?}");
+    };
+    assert!(out.msgs.is_empty());
+    assert_eq!(what, "Agent context for #3");
+    assert!(
+        text.contains("### Description\n\nDraft the post."),
+        "{text}"
+    );
+    assert!(
+        text.contains("**@zed** (2025-01-01):\n\nI can review it."),
+        "{text}"
+    );
+    assert_snapshot!("agent_context_detail", text);
+}
+
+#[test]
+fn shift_y_while_the_detail_loads_leaves_out_what_is_not_there() {
+    let out = handle_key(&UiState::default(), &detail_loading(), ch('Y')).1;
+    let [Action::Copy { text, .. }] = out.actions.as_slice() else {
+        panic!("expected one Copy, got {out:?}");
+    };
+    assert!(text.contains("## Card: #3 Card 3"), "{text}");
+    assert!(!text.contains("### Description"), "{text}");
+    assert!(!text.contains("### Comments"), "{text}");
+}

@@ -5,6 +5,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::model::{PerRepo, State, board, op_counts};
 use crate::types::{Card, IssueState};
+use crate::ui::context::{self, agent_context};
 use crate::ui::detail;
 use crate::ui::editor::{Edit, EditKind};
 use crate::ui::picker::{Pick, Picker, PickerKind, initial_cursor, menu};
@@ -71,10 +72,19 @@ pub const HELP: &[(&str, &str)] = &[
     ("!", "review failed changes"),
     ("o", "open the card in the browser"),
     ("y", "copy the card's URL to the clipboard"),
+    ("Y", "copy agent context for the card (for an agent)"),
     ("Enter", "card detail"),
     ("?", "this help"),
     ("q", "quit"),
 ];
+
+/// Copy the agent context for a card.
+fn copy_context(state: &State, card: &Card) -> Action {
+    Action::Copy {
+        text: agent_context(state, card),
+        what: context::what(card),
+    }
+}
 
 /// Copy a card's link, naming it by the link itself in the notice.
 fn copy_url(url: String) -> Action {
@@ -350,6 +360,7 @@ fn detail_key(ui: UiState, state: &State, key: KeyEvent) -> (UiState, Outcome) {
             Some(url) => (ui, Outcome::action(copy_url(url))),
             None => (ui, Outcome::default()),
         },
+        KeyCode::Char('Y') => (ui, Outcome::action(copy_context(state, &card))),
         KeyCode::Char('m') => (ui, Outcome::msg(Msg::AssignMe { item_id })),
         KeyCode::Char('u') => (ui, Outcome::msg(Msg::UnassignAll { item_id })),
         KeyCode::Char('s') => (open(ui, PickerKind::Status), Outcome::default()),
@@ -608,6 +619,10 @@ fn board_key(ui: UiState, state: &State, key: KeyEvent) -> (UiState, Outcome) {
         },
         KeyCode::Char('y') => match board(state).focused().and_then(|c| c.url.clone()) {
             Some(url) => Outcome::action(copy_url(url)),
+            None => Outcome::default(),
+        },
+        KeyCode::Char('Y') => match board(state).focused() {
+            Some(card) => Outcome::action(copy_context(state, card)),
             None => Outcome::default(),
         },
         KeyCode::Enter => {
