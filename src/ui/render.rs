@@ -424,12 +424,17 @@ pub fn status_segments(state: &State, offscreen: Offscreen) -> (Segments, Segmen
         "no priority field".into()
     };
     let plain = Style::default();
-    let mut left = vec![
-        (format!(" {title} "), theme::HEADER_FOCUS),
-        (" Priority: ".into(), plain),
-        (model::filter_label(state), theme::KEY),
-        (format!(" ({keys})"), plain),
-    ];
+    // The search overrides the priority filter, so say so rather than show
+    // a filter (and keys) that are not in effect.
+    let mut left = vec![(format!(" {title} "), theme::HEADER_FOCUS)];
+    if state.search.is_empty() {
+        left.push((" Priority: ".into(), plain));
+        left.push((model::filter_label(state), theme::KEY));
+        left.push((format!(" ({keys})"), plain));
+    } else {
+        left.push((" Priority: ".into(), plain));
+        left.push(("off while searching".into(), theme::KEY));
+    }
     if !state.search.is_empty() {
         left.push((" │ Search: ".into(), plain));
         left.push((format!("/{}", state.search), theme::KEY));
@@ -589,6 +594,19 @@ mod tests {
         assert_eq!(text(2, 0, 0, 0), " ←2  ? help ");
         assert_eq!(text(0, 3, 40, 0), " ↑3 ↓40  ? help ");
         assert_eq!(text(1, 3, 40, 5), " ←1 ↑3 ↓40 →5  ? help ");
+    }
+
+    #[test]
+    fn a_search_says_the_priority_filter_is_off() {
+        let left = |state: &State| {
+            let (segments, _) = status_segments(state, Offscreen::default());
+            segments.into_iter().map(|(t, _)| t).collect::<String>()
+        };
+        let mut s = State::new(crate::types::Config::new("acme", 1));
+        s.filter = crate::model::Filter::NoPriority;
+        assert!(left(&s).contains("Priority: No priority"));
+        s.search = "'115".into();
+        assert!(left(&s).contains("Priority: off while searching"));
     }
 
     #[test]

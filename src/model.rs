@@ -419,7 +419,9 @@ pub fn columns(state: &State, cards: &Cards) -> Vec<Column> {
     let terms = search::parse(&state.search);
     let pf = meta.priority_field.as_ref();
     for card in cards.iter() {
-        if !matches_filter(&state.filter, card) {
+        // A search looks across every priority: the filter applies only
+        // while there is no search.
+        if terms.is_empty() && !matches_filter(&state.filter, card) {
             continue;
         }
         if !terms.is_empty() {

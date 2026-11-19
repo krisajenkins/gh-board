@@ -478,6 +478,21 @@ fn search_narrows_the_board_and_focus_jumps_to_the_first_match() {
     assert_eq!(shape(&s)[0], row("Todo", &[3]));
 }
 
+#[test]
+fn a_search_ignores_the_priority_filter_until_cleared() {
+    let s = step(loaded(), Msg::FilterKey(2));
+    assert_eq!(shape(&s)[0], row("Todo", &[2]), "High only");
+    let s = step(s, Msg::Search("'#3".into()));
+    assert_eq!(shape(&s)[0], row("Todo", &[3]), "#3 has no priority");
+    assert_eq!(
+        s.filter,
+        Filter::Priority("p-high".into()),
+        "kept for later"
+    );
+    let s = step(s, Msg::Search(String::new()));
+    assert_eq!(shape(&s)[0], row("Todo", &[2]));
+}
+
 // Operations ------------------------------------------------------------------
 
 #[test]

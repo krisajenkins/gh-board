@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use common::*;
 use gh_board::model::State;
+use gh_board::types::Card;
 use gh_board::ui::editor::{Edit, EditKind};
 use gh_board::ui::{Action, Mode, Outcome, UiState, handle_key};
 use gh_board::update::{Direction, Effect, Level, Msg, Towards, update};
@@ -612,4 +613,27 @@ fn agent_context_for_a_draft_has_no_link_or_repo() {
     );
     assert!(!text.contains("- Repo:"), "{text}");
     assert!(!text.contains("New issues go into"), "{text}");
+}
+
+#[test]
+fn a_quoted_number_finds_the_issue() {
+    let titled = |n, title: &str| Card {
+        title: title.into(),
+        ..card(n)
+    };
+    let s = loaded_with(
+        config(),
+        cards([
+            titled(115, "Fix the thing"),
+            titled(12, "Other"),
+            titled(2115, "Also"),
+        ]),
+    );
+    let (_, s, _) = press(
+        UiState::default(),
+        s,
+        &[ch('/'), ch('\''), ch('1'), ch('1'), ch('5')],
+    );
+    assert_eq!(s.search, "'115");
+    assert_eq!(shape(&s)[0].1, vec![115, 2115]);
 }

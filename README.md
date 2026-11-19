@@ -108,6 +108,9 @@ Search is fuzzy, in the style of fzf. Each card is searched on what it shows:
   is case-sensitive.
 - A leading `'` matches exactly: `'idc` matches "idc" but not "in dev
   channel".
+- A search looks across every priority, ignoring the priority filter, so
+  `'115` finds #115 whatever its priority. Clearing the search brings the
+  filter back.
 
 ### The detail view
 

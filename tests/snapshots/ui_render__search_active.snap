@@ -31,4 +31,4 @@ expression: t.backend()
 "                                                                                                    "
 "                                                                                                    "
 "/blog                                                                                               "
-" Plans  Priority: All (1-4 · 0 all · 5 none) │ Search: /blog (C-l clears) │ Done hidden  →2  ? help "
+" Plans  Priority: off while searching │ Search: /blog (C-l clears) │ Done hidden         →2  ? help "
